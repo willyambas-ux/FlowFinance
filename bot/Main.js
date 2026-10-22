@@ -39,8 +39,13 @@ function doPost(e) {
   return ok_();
 }
 
+/**
+ * Resposta ao Telegram. Precisa ser HtmlService: com ContentService o Apps Script
+ * responde "302 Found" (redirecionamento), o Telegram entende como falha e fica
+ * reenviando a mesma atualização, travando a fila.
+ */
 function ok_() {
-  return ContentService.createTextOutput('ok');
+  return HtmlService.createHtmlOutput('ok');
 }
 
 function tratarMensagem_(msg) {
