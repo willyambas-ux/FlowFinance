@@ -367,7 +367,7 @@ function addMonths_(date, months) {
 
 function normalizeLancamento_(data) {
   data = data || {};
-  return {
+  const out = {
     data: data.data || Utils.today(),
     descricao: String(data.descricao || '').trim(),
     valor: Utils.toNumber(data.valor),
@@ -390,6 +390,10 @@ function normalizeLancamento_(data) {
     origem: data.origem || '',
     fatura_competencia: data.fatura_competencia ? String(data.fatura_competencia).slice(0, 7) : ''
   };
+  // 'quem' (quem lançou) só entra quando vem preenchido: assim uma edição pelo
+  // web app, que não conhece esse campo, não apaga o valor gravado pelo bot.
+  if (data.quem !== undefined && data.quem !== '') out.quem = String(data.quem);
+  return out;
 }
 
 /* ============================================================================

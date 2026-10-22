@@ -11,7 +11,7 @@ const Init = (function () {
     'Projetos':      ['id','nome','valor_meta','data_alvo','conta_vinculada','criado_em'],
     'Tags':          ['id','nome','criado_em'],
     'Contatos':      ['id','nome','tipo','criado_em'],
-    'Lancamentos':   ['id','data','descricao','valor','conta','categoria','centro','projeto','contato','tags','status','cartao','parcela_atual','parcela_total','recorrencia_id','transferencia_id','anexo_url','calendar_event_id','conciliado','observacao','origem','fatura_competencia','criado_em'],
+    'Lancamentos':   ['id','data','descricao','valor','conta','categoria','centro','projeto','contato','tags','status','cartao','parcela_atual','parcela_total','recorrencia_id','transferencia_id','anexo_url','calendar_event_id','conciliado','observacao','origem','fatura_competencia','quem','criado_em'],
     'Recorrencias':  ['id','descricao','valor','conta','cartao','categoria','centro','periodicidade','intervalo','dia','proxima_data','total_ocorrencias','ativo','criado_em'],
     'Orcamentos':    ['id','nome','tipo','referencia','valor','periodo','data_inicio','data_fim','mostrar_restante','criado_em'],
     'Regras':        ['id','condicao_campo','condicao_operador','condicao_valor','acao_campo','acao_valor','prioridade','ativo','criado_em'],
