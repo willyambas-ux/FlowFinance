@@ -1,0 +1,1882 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined">
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <span class="material-icons-outlined logo-icon">account_balance_wallet</span>
+        <span class="brand">FlowFinance</span>
+      </div>
+      <nav>
+        <a href="#visao-geral" data-view="visao-geral" class="nav-item">
+          <span class="material-icons-outlined">dashboard</span>
+          <span class="nav-label">Visão geral</span>
+        </a>
+        <a href="#lancamentos" data-view="lancamentos" class="nav-item">
+          <span class="material-icons-outlined">swap_horiz</span>
+          <span class="nav-label">Movimentações</span>
+        </a>
+        <a href="#cartoes" data-view="cartoes" class="nav-item">
+          <span class="material-icons-outlined">credit_card</span>
+          <span class="nav-label">Cartões</span>
+        </a>
+        <a href="#patrimonio" data-view="patrimonio" class="nav-item">
+          <span class="material-icons-outlined">account_balance</span>
+          <span class="nav-label">Patrimônio</span>
+        </a>
+        <a href="#metas" data-view="metas" class="nav-item">
+          <span class="material-icons-outlined">track_changes</span>
+          <span class="nav-label">Metas</span>
+        </a>
+        <a href="#relatorios" data-view="relatorios" class="nav-item">
+          <span class="material-icons-outlined">insights</span>
+          <span class="nav-label">Relatórios</span>
+        </a>
+        <a href="#importar" data-view="importar" class="nav-item">
+          <span class="material-icons-outlined">upload_file</span>
+          <span class="nav-label">Importar</span>
+        </a>
+        <a href="#fechamento" data-view="fechamento" class="nav-item">
+          <span class="material-icons-outlined">lock</span>
+          <span class="nav-label">Fechamento</span>
+        </a>
+        <a href="#cadastros" data-view="cadastros" class="nav-item">
+          <span class="material-icons-outlined">folder_open</span>
+          <span class="nav-label">Cadastros</span>
+        </a>
+        <a href="#configuracoes" data-view="configuracoes" class="nav-item">
+          <span class="material-icons-outlined">settings</span>
+          <span class="nav-label">Configurações</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="muted">—</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="toggle-sidebar" class="icon-btn" title="Recolher/expandir menu">
+          <span class="material-icons-outlined">menu</span>
+        </button>
+        <h1 id="page-title">Visão geral</h1>
+        <div class="topbar-actions">
+          <button id="month-prev" class="icon-btn" title="Mês anterior">
+            <span class="material-icons-outlined">chevron_left</span>
+          </button>
+          <span id="month-label" class="month-label">—</span>
+          <button id="month-next" class="icon-btn" title="Próximo mês">
+            <span class="material-icons-outlined">chevron_right</span>
+          </button>
+          <button id="toggle-theme" class="icon-btn" title="Alternar tema">
+            <span class="material-icons-outlined" id="theme-icon">dark_mode</span>
+          </button>
+          <button id="btn-logout" class="icon-btn" title="Sair">
+            <span class="material-icons-outlined">logout</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="loader" class="loader hidden">Carregando…</div>
+
+      <section id="view-container" class="view-container"></section>
+    </main>
+  </div>
+
+  <!-- Templates de views -->
+  <template id="tpl-visao-geral">
+    <div class="tabs">
+      <button class="tab" data-vg="mensal">Mensal</button>
+      <button class="tab" data-vg="anual">Anual</button>
+    </div>
+
+    <!-- ===== Aba Mensal ===== -->
+    <div class="vg-pane" data-vg-pane="mensal">
+    <div class="vg-grid">
+      <aside class="vg-saldos-col">
+        <div class="card mov-conta-card">
+          <div class="mov-conta-header vg-header">
+            <input type="checkbox" id="vg-conta-all" title="Selecionar todas">
+            <span>Conta</span>
+            <span class="right muted">
+              Confirmado
+              <span class="help-tip" title="Saldo atual real da conta. Inclui o saldo de abertura (saldo inicial cadastrado) + todos os lançamentos com status 'confirmado' ou 'conciliado'.">ⓘ</span>
+            </span>
+            <span class="right muted">
+              Projetado
+              <span class="help-tip" title="Saldo no final do mês visível. Inclui saldo de abertura + todos os lançamentos (pendente, agendado, confirmado e conciliado) com data até o último dia do mês.">ⓘ</span>
+            </span>
+          </div>
+          <div id="saldos-items"></div>
+          <div class="mov-conta-total vg-total">
+            <span></span>
+            <strong>Total</strong>
+            <strong class="right" id="total-confirmado">—</strong>
+            <strong class="right" id="total-projetado">—</strong>
+          </div>
+          <div id="saldos-empty" class="empty hidden" style="padding:16px">
+            Nenhuma conta cadastrada. Vá em Cadastros → Contas.
+          </div>
+        </div>
+      </aside>
+      <div class="vg-cards-col">
+        <div class="card">
+          <h2>Receitas do mês</h2>
+          <div class="big-number positive" id="mes-receitas">R$ 0,00</div>
+        </div>
+        <div class="card">
+          <h2>Despesas do mês</h2>
+          <div class="big-number negative" id="mes-despesas">R$ 0,00</div>
+        </div>
+        <div class="card">
+          <h2>Resultado do mês</h2>
+          <div class="big-number" id="mes-saldo">R$ 0,00</div>
+          <div class="muted" id="mes-qtd">— lançamentos</div>
+        </div>
+      </div>
+      <div class="card vg-fluxo">
+        <h2>Fluxo de caixa (projetado)</h2>
+        <div class="chart-wrap">
+          <canvas id="fluxo-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Linha de mini-cards: % economia, comparativo, orçamentos no alerta -->
+      <div class="vg-row vg-row-mini">
+        <div class="card vg-mini">
+          <h2>% economia do mês</h2>
+          <div class="big-number" id="vg-economia-pct">—</div>
+          <div class="muted" id="vg-economia-desc">—</div>
+        </div>
+        <div class="card vg-mini">
+          <h2>vs. mês anterior</h2>
+          <div class="vg-cmp-grid">
+            <div class="vg-cmp-row">
+              <span class="muted">Receitas</span>
+              <span class="vg-cmp-val" id="vg-cmp-rec">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Despesas</span>
+              <span class="vg-cmp-val" id="vg-cmp-des">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Resultado</span>
+              <span class="vg-cmp-val" id="vg-cmp-res">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="card vg-mini">
+          <h2>Orçamentos no alerta</h2>
+          <div class="vg-orc-grid">
+            <div class="vg-orc-item">
+              <span class="vg-orc-num positive-val" id="vg-orc-ok">—</span>
+              <span class="muted">no verde</span>
+            </div>
+            <div class="vg-orc-item">
+              <span class="vg-orc-num" style="color:var(--warning)" id="vg-orc-lim">—</span>
+              <span class="muted">≥ 80%</span>
+            </div>
+            <div class="vg-orc-item">
+              <span class="vg-orc-num negative-val" id="vg-orc-est">—</span>
+              <span class="muted">estourados</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Próximas a vencer -->
+      <div class="card card-full">
+        <h2>Próximas contas (7 dias)</h2>
+        <table class="table compact-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Descrição</th>
+              <th>Categoria</th>
+              <th>Status</th>
+              <th class="right">Valor</th>
+            </tr>
+          </thead>
+          <tbody id="vg-proximas-body"></tbody>
+        </table>
+        <div class="empty hidden" id="vg-proximas-empty">Sem contas a pagar nos próximos 7 dias.</div>
+      </div>
+
+      <!-- Top categorias + Donut despesas/categoria -->
+      <div class="vg-row vg-row-half">
+        <div class="card">
+          <h2>Top categorias de despesa</h2>
+          <div id="vg-top-cat"></div>
+          <div class="empty hidden" id="vg-top-cat-empty">Sem despesas este mês.</div>
+        </div>
+        <div class="card">
+          <h2>Despesas por categoria</h2>
+          <div class="chart-wrap"><canvas id="vg-donut-chart"></canvas></div>
+          <div class="empty hidden" id="vg-donut-empty">Sem despesas este mês.</div>
+        </div>
+      </div>
+
+      <!-- Receita vs Despesa últimos 6 meses -->
+      <div class="card card-full">
+        <h2>Receita × Despesa — últimos 6 meses</h2>
+        <div class="chart-wrap chart-wrap-tall">
+          <canvas id="vg-6m-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Heatmap calendário -->
+      <div class="card card-full">
+        <h2>Gastos por dia do mês</h2>
+        <div class="vg-heatmap" id="vg-heatmap"></div>
+        <div class="vg-heatmap-legend">
+          <span class="muted">menos</span>
+          <span class="hl-cell hl-0"></span>
+          <span class="hl-cell hl-1"></span>
+          <span class="hl-cell hl-2"></span>
+          <span class="hl-cell hl-3"></span>
+          <span class="hl-cell hl-4"></span>
+          <span class="muted">mais</span>
+        </div>
+      </div>
+    </div>
+    </div>
+    <!-- /Aba Mensal -->
+
+    <!-- ===== Aba Anual ===== -->
+    <div class="vg-pane hidden" data-vg-pane="anual">
+      <div class="vg-anual-header">
+        <button class="icon-btn" id="vg-ano-prev" title="Ano anterior">
+          <span class="material-icons-outlined">chevron_left</span>
+        </button>
+        <span id="vg-ano-label" class="vg-ano-label">—</span>
+        <button class="icon-btn" id="vg-ano-next" title="Próximo ano">
+          <span class="material-icons-outlined">chevron_right</span>
+        </button>
+      </div>
+
+      <!-- Cards de totais anuais -->
+      <div class="vg-row vg-row-quad">
+        <div class="card vg-mini">
+          <h2>Receitas do ano</h2>
+          <div class="big-number positive" id="vga-receitas">R$ 0,00</div>
+        </div>
+        <div class="card vg-mini">
+          <h2>Despesas do ano</h2>
+          <div class="big-number negative" id="vga-despesas">R$ 0,00</div>
+        </div>
+        <div class="card vg-mini">
+          <h2>Resultado do ano</h2>
+          <div class="big-number" id="vga-resultado">R$ 0,00</div>
+        </div>
+        <div class="card vg-mini">
+          <h2>% economia</h2>
+          <div class="big-number" id="vga-pct">—</div>
+          <div class="muted" id="vga-pct-desc">—</div>
+        </div>
+      </div>
+
+      <!-- Comparativo + média mensal -->
+      <div class="vg-row vg-row-half">
+        <div class="card vg-mini">
+          <h2>vs. ano anterior</h2>
+          <div class="vg-cmp-grid">
+            <div class="vg-cmp-row">
+              <span class="muted">Receitas</span>
+              <span class="vg-cmp-val" id="vga-cmp-rec">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Despesas</span>
+              <span class="vg-cmp-val" id="vga-cmp-des">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Resultado</span>
+              <span class="vg-cmp-val" id="vga-cmp-res">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="card vg-mini">
+          <h2>Média mensal <span class="help-tip" id="vga-media-tip" title="Média sobre os meses que tiveram movimento.">ⓘ</span></h2>
+          <div class="vg-cmp-grid">
+            <div class="vg-cmp-row">
+              <span class="muted">Receitas</span>
+              <span class="vg-cmp-val positive-val" id="vga-media-rec">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Despesas</span>
+              <span class="vg-cmp-val negative-val" id="vga-media-des">—</span>
+            </div>
+            <div class="vg-cmp-row">
+              <span class="muted">Resultado</span>
+              <span class="vg-cmp-val" id="vga-media-res">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top categorias do ano -->
+      <div class="card card-full">
+        <h2>Top categorias de despesa — ano</h2>
+        <div id="vga-top-cat"></div>
+        <div class="empty hidden" id="vga-top-cat-empty">Sem despesas neste ano.</div>
+      </div>
+
+      <!-- Heatmap anual -->
+      <div class="card card-full">
+        <h2>Gastos por dia do ano</h2>
+        <div class="vg-heatmap-anual-wrap">
+          <div class="vg-heatmap-anual" id="vga-heatmap"></div>
+          <div class="vg-heatmap-anual-months" id="vga-heatmap-months"></div>
+        </div>
+        <div class="vg-heatmap-legend" style="margin-top:14px">
+          <span class="muted">menos</span>
+          <span class="hl-cell hl-0"></span>
+          <span class="hl-cell hl-1"></span>
+          <span class="hl-cell hl-2"></span>
+          <span class="hl-cell hl-3"></span>
+          <span class="hl-cell hl-4"></span>
+          <span class="muted">mais</span>
+        </div>
+      </div>
+    </div>
+    <!-- /Aba Anual -->
+  </template>
+
+  <template id="tpl-lancamentos">
+    <div class="mov-layout" id="mov-layout">
+      <button type="button" class="mov-sidebar-toggle" id="mov-sidebar-toggle" title="Recolher/expandir painel lateral">
+        <span class="material-icons-outlined">chevron_left</span>
+      </button>
+      <aside class="mov-sidebar">
+        <div class="card mov-conta-card">
+          <div class="mov-conta-header">
+            <input type="checkbox" id="mov-conta-all" title="Selecionar todas">
+            <span>Conta</span>
+            <span class="right muted">
+              Confirmado
+              <span class="help-tip" title="Conta: saldo real atual (abertura + lançamentos confirmados/conciliados).&#10;Cartão: total da fatura do mês (gastos do ciclo que vence neste mês).">ⓘ</span>
+            </span>
+            <span class="right muted">
+              Projetado
+              <span class="help-tip" title="Conta: saldo no fim do mês (abertura + todos os lançamentos com data até o último dia).&#10;Cartão: saldo devedor total (compras − pagamentos).">ⓘ</span>
+            </span>
+          </div>
+          <div id="mov-conta-items"></div>
+          <div class="mov-conta-total">
+            <span></span>
+            <strong>Total (caixa)</strong>
+            <strong class="right" id="mov-conta-total-conf">—</strong>
+            <strong class="right" id="mov-conta-total-proj">—</strong>
+          </div>
+        </div>
+
+        <div class="card mov-conta-card mov-passivos-card hidden" id="mov-passivos-card">
+          <div class="mov-conta-header">
+            <input type="checkbox" id="mov-passivos-all" title="Selecionar todos">
+            <span>Passivos
+              <span class="help-tip" title="Cartões de crédito (curto prazo) e empréstimos/dívidas (longo prazo). Não compõem o caixa — o pagamento já aparece como saída na conta pagadora.">ⓘ</span>
+            </span>
+            <span class="right muted">
+              Fatura/Conf
+              <span class="help-tip" title="Cartão: total da fatura do mês.&#10;Empréstimo: saldo confirmado.">ⓘ</span>
+            </span>
+            <span class="right muted">
+              Devedor
+              <span class="help-tip" title="Cartão: saldo devedor total.&#10;Empréstimo: saldo no fim do mês.">ⓘ</span>
+            </span>
+          </div>
+          <div id="mov-passivos-items"></div>
+          <div class="mov-conta-total">
+            <span></span>
+            <strong>Total devedor</strong>
+            <strong class="right" id="mov-passivos-total-conf">—</strong>
+            <strong class="right" id="mov-passivos-total-proj">—</strong>
+          </div>
+        </div>
+
+        <div class="card mov-resumo-card">
+          <div class="muted resumo-title">Resultados — fluxo de caixa (R$)
+            <span class="help-tip" title="Considera só lançamentos das contas (caixa). Compras no cartão aparecem na tabela de cartões e só viram saída de caixa quando a fatura é paga.">ⓘ</span>
+          </div>
+          <div class="mov-resumo">
+            <div class="resumo-row resumo-section">
+              <span>Entradas</span>
+              <span id="resumo-entradas">—</span>
+            </div>
+            <div class="resumo-row resumo-sub">
+              <span>Receitas</span>
+              <span id="resumo-receitas">—</span>
+            </div>
+            <div class="resumo-row resumo-sub">
+              <span>Transferências</span>
+              <span id="resumo-transf-in">—</span>
+            </div>
+            <div class="resumo-row resumo-section">
+              <span>Saídas (reais)</span>
+              <span id="resumo-saidas">—</span>
+            </div>
+            <div class="resumo-row resumo-sub">
+              <span>Despesas</span>
+              <span id="resumo-despesas">—</span>
+            </div>
+            <div class="resumo-row resumo-sub">
+              <span>Transferências</span>
+              <span id="resumo-transf-out">—</span>
+            </div>
+            <div class="resumo-row resumo-total">
+              <strong>Resultado real</strong>
+              <strong id="resumo-resultado">—</strong>
+            </div>
+            <div class="resumo-row resumo-section resumo-virtual hidden" id="resumo-row-virtuais">
+              <span>
+                Previsão orçamentos
+                <span class="help-tip" title="Soma dos 'Restante orçamento'. Mostra quanto ainda sairia se você usar 100% dos orçamentos do mês — não é movimento real.">ⓘ</span>
+              </span>
+              <span id="resumo-virtuais">—</span>
+            </div>
+            <div class="resumo-row resumo-total resumo-virtual hidden" id="resumo-row-com-virtuais">
+              <strong>Com previsão</strong>
+              <strong id="resumo-com-virtuais">—</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mov-orcamentos-card hidden" id="mov-orcamentos-card">
+          <div class="muted resumo-title">Orçamentos do mês</div>
+          <div id="mov-orcamentos-list"></div>
+        </div>
+      </aside>
+
+      <main class="mov-main">
+        <div class="card card-full mov-topbar-card">
+          <div class="mov-month-bar">
+            <button class="icon-btn" id="mov-mes-prev" title="Mês anterior">
+              <span class="material-icons-outlined">chevron_left</span>
+            </button>
+            <span class="mov-mes-label" id="mov-mes-label">—</span>
+            <button class="icon-btn" id="mov-mes-next" title="Próximo mês">
+              <span class="material-icons-outlined">chevron_right</span>
+            </button>
+          </div>
+          <div class="mov-toolbar">
+            <div class="mov-status-pills">
+              <span class="muted" style="font-size:13px;font-weight:500;margin-right:4px">Filtrar</span>
+              <button type="button" class="status-pill" data-status="pendente">
+                <span class="pill-dot pendente"></span> Pendentes
+              </button>
+              <button type="button" class="status-pill" data-status="agendado">
+                <span class="pill-dot agendado"></span> Agendados
+              </button>
+              <button type="button" class="status-pill" data-status="confirmado">
+                <span class="pill-dot confirmado"></span> Confirmados
+              </button>
+              <button type="button" class="status-pill" data-status="conciliado">
+                <span class="pill-dot conciliado"></span> Conciliados
+              </button>
+            </div>
+            <div class="header-actions">
+              <button class="btn" id="btn-nova-transferencia" title="Nova transferência">
+                <span class="material-icons-outlined">swap_horiz</span>
+              </button>
+              <button class="btn btn-primary" id="btn-novo-lancamento">
+                <span class="material-icons-outlined">add</span> Novo
+              </button>
+              <button class="btn" id="btn-export-lancamentos" title="Exportar CSV">
+                <span class="material-icons-outlined">download</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mov-tables">
+          <!-- Lançamentos das contas -->
+          <div class="card card-full mov-table-card">
+            <div class="mov-table-title">
+              <span class="material-icons-outlined">account_balance</span>
+              <h3>Contas (caixa)</h3>
+            </div>
+            <div class="mov-bulk-bar hidden" id="contas-bulk-bar">
+              <span id="contas-bulk-count">0 selecionados</span>
+              <div class="mov-bulk-actions">
+                <select id="contas-bulk-status" class="bulk-select" title="Mudar status">
+                  <option value="">Status…</option>
+                  <option value="pendente">→ Pendente</option>
+                  <option value="agendado">→ Agendado</option>
+                  <option value="confirmado">→ Confirmado</option>
+                  <option value="conciliado">→ Conciliado</option>
+                </select>
+                <button class="btn btn-sm" id="contas-bulk-categoria"><span class="material-icons-outlined">sell</span> Categoria/Centro</button>
+                <button class="btn btn-sm" id="contas-bulk-conta"><span class="material-icons-outlined">swap_horiz</span> Mover conta</button>
+                <button class="btn btn-sm btn-danger" id="contas-bulk-del"><span class="material-icons-outlined">delete</span> Excluir</button>
+                <button class="btn btn-sm" id="contas-bulk-clear" title="Limpar seleção"><span class="material-icons-outlined">close</span></button>
+              </div>
+            </div>
+            <table class="table mov-table">
+              <colgroup>
+                <col class="col-check">
+                <col class="col-status">
+                <col class="col-date">
+                <col class="col-desc">
+                <col class="col-valor">
+                <col class="col-saldo">
+                <col class="col-actions">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th></th>
+                  <th>Data</th>
+                  <th>Descrição</th>
+                  <th class="right">Valor</th>
+                  <th class="right">Saldo</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="lancamentos-body"></tbody>
+            </table>
+            <div id="lancamentos-empty" class="empty hidden">Nenhum lançamento de conta no período.</div>
+          </div>
+
+          <!-- Lançamentos dos cartões -->
+          <div class="card card-full mov-table-card">
+            <div class="mov-table-title">
+              <span class="material-icons-outlined">credit_card</span>
+              <h3>Cartões de crédito</h3>
+              <span class="muted mov-table-subtitle">impacta a fatura</span>
+            </div>
+            <div class="mov-bulk-bar hidden" id="cartoes-bulk-bar">
+              <span id="cartoes-bulk-count">0 selecionados</span>
+              <button class="btn btn-danger btn-sm" id="cartoes-bulk-del">
+                <span class="material-icons-outlined">delete</span> Excluir selecionados
+              </button>
+            </div>
+            <table class="table mov-table mov-table-cartoes">
+              <colgroup>
+                <col class="col-check">
+                <col class="col-status">
+                <col class="col-date">
+                <col class="col-desc">
+                <col class="col-valor">
+                <col class="col-saldo">
+                <col class="col-actions">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th></th>
+                  <th>Data</th>
+                  <th>Descrição</th>
+                  <th class="right">Valor</th>
+                  <th class="right">Fatura</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cartoes-body"></tbody>
+            </table>
+            <div id="cartoes-empty" class="empty hidden">Nenhum lançamento de cartão no período.</div>
+            <div id="cartoes-rodape" class="cartoes-rodape"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </template>
+
+  <template id="tpl-cartoes">
+    <div class="card card-full">
+      <div class="card-header">
+        <h2>Faturas do cartão</h2>
+        <div class="cartao-controls">
+          <select id="cartao-selector" class="cartao-select"></select>
+        </div>
+      </div>
+      <div id="cartao-empty" class="empty hidden">
+        Nenhum cartão cadastrado. Vá em Cadastros → Cartões.
+      </div>
+      <div id="cartao-detalhes" class="hidden">
+        <!-- Painel de resumo do cartão -->
+        <div class="cartao-painel">
+          <div class="cartao-painel-cards">
+            <div class="cartao-mini">
+              <div class="cartao-mini-label">Limite usado</div>
+              <div class="cartao-mini-val" id="painel-limite-val">—</div>
+              <div class="cartao-limite-bar"><div id="painel-limite-fill"></div></div>
+              <div class="cartao-mini-sub muted" id="painel-limite-sub">—</div>
+            </div>
+            <div class="cartao-mini">
+              <div class="cartao-mini-label">Saldo devedor</div>
+              <div class="cartao-mini-val negative-val" id="painel-devedor">—</div>
+              <div class="cartao-mini-sub muted">total no cartão</div>
+            </div>
+            <div class="cartao-mini">
+              <div class="cartao-mini-label">Fatura atual</div>
+              <div class="cartao-mini-val" id="painel-fatura-val">—</div>
+              <div class="cartao-mini-sub muted" id="painel-fatura-sub">—</div>
+            </div>
+            <div class="cartao-mini">
+              <div class="cartao-mini-label">Comprometido futuro</div>
+              <div class="cartao-mini-val" id="painel-futuro">—</div>
+              <div class="cartao-mini-sub muted">parcelas a vencer</div>
+            </div>
+          </div>
+          <div class="cartao-grafico-wrap">
+            <div class="cartao-grafico-titulo muted">Faturas por mês <span style="font-weight:400">(clique numa barra pra abrir)</span></div>
+            <div class="chart-wrap" style="height:180px"><canvas id="painel-faturas-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Navegador de fatura (independente do mês global) -->
+        <div class="fatura-nav">
+          <button class="icon-btn" id="fatura-prev" title="Fatura anterior">
+            <span class="material-icons-outlined">chevron_left</span>
+          </button>
+          <div class="fatura-nav-center">
+            <button type="button" class="fatura-nav-titulo" id="fatura-nav-pick" title="Escolher fatura (mês/ano)">
+              <span id="fatura-nav-label">—</span>
+              <span class="material-icons-outlined fatura-nav-cal">expand_more</span>
+              <span class="fatura-badge" id="fatura-status-badge"></span>
+            </button>
+            <div class="fatura-nav-periodo muted" id="fatura-nav-periodo">—</div>
+            <input type="month" id="fatura-month-picker" class="fatura-month-picker hidden">
+          </div>
+          <button class="icon-btn" id="fatura-next" title="Próxima fatura">
+            <span class="material-icons-outlined">chevron_right</span>
+          </button>
+        </div>
+
+        <div class="fatura-grid">
+          <div>
+            <div class="muted">Fechamento</div>
+            <div class="fatura-val" id="fatura-fechamento">—</div>
+          </div>
+          <div>
+            <div class="muted">Vencimento</div>
+            <div class="fatura-val" id="fatura-vencimento">—</div>
+          </div>
+          <div>
+            <div class="muted">Total da fatura</div>
+            <div class="fatura-val negative-val" id="fatura-total">R$ 0,00</div>
+          </div>
+          <div>
+            <div class="muted">Disponível / Limite</div>
+            <div class="fatura-val" id="fatura-limite">—</div>
+          </div>
+        </div>
+        <div class="fatura-actions">
+          <button class="btn btn-primary" id="btn-novo-lanc-cartao">
+            <span class="material-icons-outlined">add</span> Novo lançamento
+          </button>
+          <button class="btn" id="btn-pagar-fatura">
+            <span class="material-icons-outlined">payments</span> Pagar fatura
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-full" id="cartao-lancs-card" style="display:none">
+      <h2>Lançamentos desta fatura</h2>
+      <p class="muted" style="font-size:12px;margin:-4px 0 10px">
+        Use <span class="material-icons-outlined" style="font-size:13px;vertical-align:middle">chevron_left</span>/<span class="material-icons-outlined" style="font-size:13px;vertical-align:middle">chevron_right</span> em cada linha pra mover o lançamento pra fatura anterior/próxima.
+      </p>
+      <div class="mov-bulk-bar hidden" id="fatura-bulk-bar">
+        <span id="fatura-bulk-count">0 selecionados</span>
+        <div class="mov-bulk-actions">
+          <select id="fatura-bulk-status" class="bulk-select" title="Mudar status">
+            <option value="">Status…</option>
+            <option value="pendente">→ Pendente</option>
+            <option value="agendado">→ Agendado</option>
+            <option value="confirmado">→ Confirmado</option>
+            <option value="conciliado">→ Conciliado</option>
+          </select>
+          <button class="btn btn-sm" id="fatura-bulk-categoria"><span class="material-icons-outlined">sell</span> Categoria/Centro</button>
+          <button class="btn btn-sm" id="fatura-bulk-mov-prev" title="Mover pra fatura anterior"><span class="material-icons-outlined">chevron_left</span> Fatura anterior</button>
+          <button class="btn btn-sm" id="fatura-bulk-mov-next" title="Mover pra próxima fatura">Próxima fatura <span class="material-icons-outlined">chevron_right</span></button>
+          <button class="btn btn-sm btn-danger" id="fatura-bulk-del"><span class="material-icons-outlined">delete</span> Excluir</button>
+          <button class="btn btn-sm" id="fatura-bulk-clear" title="Limpar seleção"><span class="material-icons-outlined">close</span></button>
+        </div>
+      </div>
+      <table class="table fatura-lancs-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="fatura-check-all" title="Marcar/desmarcar todos"></th>
+            <th>Data</th>
+            <th>Descrição</th>
+            <th>Categoria</th>
+            <th>Parcela</th>
+            <th class="right">Valor</th>
+            <th class="right">Mover</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="fatura-lancs-body"></tbody>
+      </table>
+      <div id="fatura-lancs-empty" class="empty hidden">Nenhum lançamento nesta fatura.</div>
+    </div>
+  </template>
+
+  <template id="tpl-metas">
+    <div class="tabs">
+      <button class="tab" data-meta="orcamentos">Orçamentos</button>
+      <button class="tab" data-meta="economia">Economia</button>
+    </div>
+
+    <div id="metas-orcamentos" class="meta-pane">
+      <div class="card card-full">
+        <div class="card-header">
+          <h2>Orçamentos do mês</h2>
+          <button class="btn btn-primary" id="btn-novo-orcamento">
+            <span class="material-icons-outlined">add</span> Novo orçamento
+          </button>
+        </div>
+        <div id="orcamentos-list"></div>
+        <div id="orcamentos-empty" class="empty hidden">
+          Nenhum orçamento definido. Crie um para acompanhar gastos por categoria ou centro.
+        </div>
+      </div>
+    </div>
+
+    <div id="metas-economia" class="meta-pane hidden">
+      <div id="economia-list" class="grid"></div>
+      <div id="economia-empty" class="empty hidden">
+        Nenhuma meta de economia. Cadastre um Projeto com Valor meta &gt; 0 e conta vinculada em Cadastros → Projetos.
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-relatorios">
+    <div class="grid">
+      <div class="card">
+        <h2>Totais por categoria</h2>
+        <div class="chart-wrap"><canvas id="chart-categoria"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Totais por centro</h2>
+        <div class="chart-wrap"><canvas id="chart-centro"></canvas></div>
+      </div>
+      <div class="card card-full">
+        <h2>Evolução mensal (6 meses)</h2>
+        <div class="chart-wrap"><canvas id="chart-evolucao"></canvas></div>
+      </div>
+      <div class="card card-full">
+        <h2>Evolução por categoria — top 5 (6 meses)</h2>
+        <div class="chart-wrap"><canvas id="chart-evol-cat"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Comparação entre períodos</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th></th>
+              <th class="right" id="cmp-label-1">—</th>
+              <th class="right" id="cmp-label-2">—</th>
+              <th class="right">Δ</th>
+            </tr>
+          </thead>
+          <tbody id="cmp-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Contas a pagar (próx. 30 dias)</h2>
+        <table class="table">
+          <thead><tr><th>Data</th><th>Descrição</th><th class="right">Valor</th></tr></thead>
+          <tbody id="cap-body"></tbody>
+        </table>
+        <div id="cap-empty" class="empty hidden">Sem despesas a vencer.</div>
+      </div>
+      <div class="card">
+        <h2>Contas a receber (próx. 30 dias)</h2>
+        <table class="table">
+          <thead><tr><th>Data</th><th>Descrição</th><th class="right">Valor</th></tr></thead>
+          <tbody id="car-body"></tbody>
+        </table>
+        <div id="car-empty" class="empty hidden">Sem receitas a vencer.</div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-patrimonio">
+    <div class="grid">
+      <div class="card">
+        <h2>Ativos</h2>
+        <div class="big-number positive" id="pat-ativos">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <h2>Passivos</h2>
+        <div class="big-number negative" id="pat-passivos">R$ 0,00</div>
+      </div>
+      <div class="card">
+        <h2>Patrimônio líquido</h2>
+        <div class="big-number" id="pat-pl">R$ 0,00</div>
+        <div class="muted" id="pat-data">—</div>
+      </div>
+      <div class="card card-full">
+        <h2>Contas</h2>
+        <table class="table">
+          <thead><tr><th>Conta</th><th>Tipo</th><th class="right">Saldo</th></tr></thead>
+          <tbody id="pat-contas-body"></tbody>
+        </table>
+        <div id="pat-contas-empty" class="empty hidden">Sem contas cadastradas.</div>
+      </div>
+      <div class="card card-full">
+        <h2>Cartões (saldo devedor)</h2>
+        <table class="table">
+          <thead><tr><th>Cartão</th><th>Bandeira</th><th class="right">Saldo</th></tr></thead>
+          <tbody id="pat-cartoes-body"></tbody>
+        </table>
+        <div id="pat-cartoes-empty" class="empty hidden">Sem cartões cadastrados.</div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-importar">
+    <div class="card card-full">
+      <div class="card-header">
+        <h2>Importar extrato ou fatura (CSV ou OFX)</h2>
+      </div>
+      <p class="muted">
+        Cole o conteúdo do arquivo. Detectamos o formato automaticamente.
+        <br><strong>Extrato (conta):</strong> CSV com <code>data</code>, <code>descricao</code>/<code>histórico</code> e <code>valor</code>; ou OFX.
+        <br><strong>Fatura (cartão):</strong> CSV com <code>data</code>, <code>estabelecimento</code>, <code>valor</code> e <code>parcela</code>. Ao escolher um cartão, ativamos o <strong>modo fatura</strong>: sinais invertidos e linhas de pagamento ignoradas.
+      </p>
+      <div class="form-row">
+        <label for="import-destino">Destino (conta ou cartão)</label>
+        <select id="import-destino"></select>
+      </div>
+      <div id="import-modo-fatura" class="import-modo-fatura hidden">
+        <span class="material-icons-outlined">credit_card</span>
+        Modo fatura de cartão ativo — compras entram como despesa, pagamentos da fatura são ignorados.
+      </div>
+      <div class="form-row hidden" id="import-row-competencia">
+        <label for="import-competencia">
+          Competência da fatura (vence em)
+          <span class="help-tip" title="Joga TODAS as compras importadas pra esta fatura, independente da data. Deixe vazio pra cada compra cair na fatura pela própria data. Você pode ajustar linha a linha na pré-visualização.">ⓘ</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="month" id="import-competencia">
+          <button type="button" class="btn btn-sm" id="import-competencia-aplicar" title="Aplicar a todas as linhas">Aplicar a todas</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="import-csv">Conteúdo do arquivo (CSV ou OFX)</label>
+        <textarea id="import-csv" rows="8" placeholder="Data;Estabelecimento;Portador;Valor;Parcela&#10;01/05/2026;OGGI SORVETES;FULANO;R$ 22,98;-"></textarea>
+        <span class="muted" id="import-formato"></span>
+      </div>
+      <div class="import-actions">
+        <button class="btn" id="btn-import-analisar">
+          <span class="material-icons-outlined">search</span> Analisar
+        </button>
+        <button class="btn btn-primary" id="btn-import-confirmar" disabled>
+          <span class="material-icons-outlined">upload</span> Importar
+        </button>
+        <span id="import-summary" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card card-full" id="import-preview-card" style="display:none">
+      <div class="card-header">
+        <h2>Pré-visualização</h2>
+        <span class="muted" id="import-dup-aviso"></span>
+      </div>
+      <div class="import-falta-aviso hidden" id="import-falta-aviso"></div>
+      <table class="table import-preview-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="import-check-all" checked title="Marcar/desmarcar todos"></th>
+            <th>Data</th>
+            <th>Descrição</th>
+            <th>Categoria</th>
+            <th>Centro</th>
+            <th>Parcela</th>
+            <th class="import-col-fatura hidden">Fatura</th>
+            <th class="right">Valor</th>
+          </tr>
+        </thead>
+        <tbody id="import-preview-body"></tbody>
+      </table>
+    </div>
+  </template>
+
+  <template id="tpl-fechamento">
+    <div class="card card-full">
+      <h2>Fechamento de posição</h2>
+      <p class="muted">
+        Informe o saldo real de uma conta em uma data. O sistema mostra a diferença
+        em relação ao saldo confirmado calculado e, se você marcar, cria um lançamento
+        de ajuste para conciliar.
+      </p>
+      <div class="form-row">
+        <label for="fech-conta">Conta</label>
+        <select id="fech-conta"></select>
+      </div>
+      <div class="form-row">
+        <label for="fech-data">Data</label>
+        <input type="date" id="fech-data">
+      </div>
+      <div class="form-row">
+        <label for="fech-saldo">Saldo real (R$)</label>
+        <input type="number" step="0.01" id="fech-saldo">
+      </div>
+      <div class="form-row checkbox-row">
+        <input type="checkbox" id="fech-ajuste" checked>
+        <label for="fech-ajuste">Criar lançamento de ajuste se houver diferença</label>
+      </div>
+      <button class="btn btn-primary" id="btn-fechar">
+        <span class="material-icons-outlined">check_circle</span> Fechar posição
+      </button>
+      <div id="fech-resultado" class="muted" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card card-full">
+      <h2>Histórico de fechamentos</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Conta</th>
+            <th class="right">Saldo real</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="fech-historico-body"></tbody>
+      </table>
+      <div id="fech-historico-empty" class="empty hidden">Nenhum fechamento registrado.</div>
+    </div>
+  </template>
+
+  <template id="tpl-cadastros">
+    <div class="tabs">
+      <button class="tab" data-cad="contas">Contas</button>
+      <button class="tab" data-cad="cartoes">Cartões</button>
+      <button class="tab" data-cad="categorias">Categorias</button>
+      <button class="tab" data-cad="centros">Centros</button>
+      <button class="tab" data-cad="projetos">Projetos</button>
+      <button class="tab" data-cad="recorrencias">Recorrências</button>
+      <button class="tab" data-cad="regras">Regras</button>
+    </div>
+    <div class="card card-full">
+      <div class="card-header">
+        <h2 id="cad-title">—</h2>
+        <button class="btn btn-primary" id="btn-novo-cadastro">
+          <span class="material-icons-outlined">add</span> Novo
+        </button>
+      </div>
+      <table class="table">
+        <thead id="cad-thead"></thead>
+        <tbody id="cad-tbody"></tbody>
+      </table>
+      <div id="cad-empty" class="empty hidden">Nada cadastrado ainda.</div>
+    </div>
+  </template>
+
+  <template id="tpl-configuracoes">
+    <div class="grid">
+      <div class="card">
+        <h2>App</h2>
+        <div class="config-info">
+          <div><span class="muted">Versão</span><span id="config-version">—</span></div>
+          <div><span class="muted">Usuário</span><span id="config-user">—</span></div>
+          <div><span class="muted">Fuso</span><span id="config-tz">—</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Planilha (banco de dados)</h2>
+        <div class="config-info">
+          <div><span class="muted">Nome</span><span id="config-ss-name">—</span></div>
+          <div>
+            <span class="muted">URL</span>
+            <a id="config-ss-url" href="#" target="_blank" rel="noopener">abrir</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-full">
+        <h2>Manutenção</h2>
+        <div class="config-actions">
+          <button class="btn" id="btn-config-clear-cache">
+            <span class="material-icons-outlined">cached</span> Recarregar cache
+          </button>
+          <button class="btn" id="btn-config-reinit">
+            <span class="material-icons-outlined">table_view</span> Reinicializar abas
+          </button>
+          <button class="btn" id="btn-config-reapply-regras">
+            <span class="material-icons-outlined">auto_fix_high</span> Reaplicar regras
+          </button>
+          <button class="btn" id="btn-config-export-all">
+            <span class="material-icons-outlined">download</span> Exportar todos os lançamentos
+          </button>
+          <button class="btn" id="btn-config-seed-padrao">
+            <span class="material-icons-outlined">auto_awesome</span> Popular categorias e centros padrão
+          </button>
+          <button class="btn" id="btn-config-seed-regras">
+            <span class="material-icons-outlined">auto_fix_high</span> Criar regras de categorização comuns
+          </button>
+          <button class="btn" id="btn-config-marcar-agendado">
+            <span class="material-icons-outlined">event</span> Marcar futuros pendentes como agendados
+          </button>
+        </div>
+        <div id="config-status" class="muted" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card card-full">
+        <h2>Acesso e segurança</h2>
+        <p class="muted" style="font-size:13px">
+          Senha local sobre a sua conta Google. O app pede senha ao entrar e
+          se trava sozinho depois de um tempo sem uso.
+        </p>
+        <div class="config-info">
+          <div><span class="muted">Sua conta Google</span><span id="auth-cfg-email">—</span></div>
+          <div>
+            <span class="muted">Bloquear após (min)</span>
+            <span style="display:flex;gap:8px;align-items:center">
+              <input type="number" id="auth-cfg-timeout" min="1" max="240" style="width:80px">
+              <button class="btn" id="btn-auth-timeout-save">Salvar</button>
+            </span>
+          </div>
+        </div>
+
+        <h3 style="margin-top:16px;font-size:14px">Trocar minha senha</h3>
+        <div class="config-info">
+          <div>
+            <span class="muted">Senha atual</span>
+            <input type="password" id="auth-cfg-pwd-old" autocomplete="current-password">
+          </div>
+          <div>
+            <span class="muted">Nova senha</span>
+            <input type="password" id="auth-cfg-pwd-new" autocomplete="new-password">
+          </div>
+          <div>
+            <span class="muted">Confirmar</span>
+            <input type="password" id="auth-cfg-pwd-new2" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="config-actions" style="margin-top:8px">
+          <button class="btn btn-primary" id="btn-auth-change-pwd">
+            <span class="material-icons-outlined">key</span> Trocar senha
+          </button>
+        </div>
+
+        <h3 style="margin-top:16px;font-size:14px">Usuários autorizados</h3>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>E-mail Google</th>
+              <th>Cadastrado em</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="auth-cfg-users-body"></tbody>
+        </table>
+        <div class="config-actions" style="margin-top:8px">
+          <input type="email" id="auth-cfg-new-email" placeholder="email@gmail.com" style="flex:1;min-width:200px">
+          <input type="password" id="auth-cfg-new-pwd" placeholder="senha inicial">
+          <button class="btn btn-primary" id="btn-auth-add-user">
+            <span class="material-icons-outlined">person_add</span> Adicionar usuário
+          </button>
+        </div>
+        <div id="auth-cfg-status" class="muted" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card card-full">
+        <h2>Google Calendar</h2>
+        <p class="muted" style="font-size:13px">
+          Lança contas a pagar (despesas pendentes/agendadas) como eventos all-day
+          no Google Calendar. Usa um calendário dedicado "FlowFinance" — você pode
+          ligar/desligar a visibilidade dele no app do Google Calendar.
+        </p>
+        <div class="config-info">
+          <div><span class="muted">Status</span><span id="config-cal-status">—</span></div>
+          <div>
+            <span class="muted">Calendar</span>
+            <span id="config-cal-name">—</span>
+          </div>
+          <div>
+            <span class="muted">Auto-sync ao salvar</span>
+            <label class="saldo-radios" style="margin:0">
+              <input type="checkbox" id="config-cal-autosync">
+              <span style="font-size:12px">Quando ligado, cada lançamento atualiza o Calendar</span>
+            </label>
+          </div>
+        </div>
+        <div class="config-actions" style="margin-top:12px">
+          <button class="btn btn-primary" id="btn-config-cal-sync">
+            <span class="material-icons-outlined">sync</span> Sincronizar agora (90 dias)
+          </button>
+          <button class="btn" id="btn-config-cal-open">
+            <span class="material-icons-outlined">event</span> Abrir Google Calendar
+          </button>
+          <button class="btn" id="btn-config-cal-clear">
+            <span class="material-icons-outlined">delete_sweep</span> Remover todos os eventos
+          </button>
+        </div>
+        <div id="config-cal-status-msg" class="muted" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Modal genérico -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-bg" id="modal-bg"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">—</h3>
+        <button class="icon-btn" id="modal-close">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form id="modal-form" class="modal-body" onsubmit="return false;"></form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="modal-save">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de lançamento (layout custom com tipo/2 colunas) -->
+  <div id="lanc-modal" class="modal hidden">
+    <div class="modal-bg" id="lanc-modal-bg"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <div class="type-tabs">
+          <button type="button" class="type-tab" data-tipo="despesa">Despesa</button>
+          <button type="button" class="type-tab" data-tipo="receita">Receita</button>
+          <button type="button" class="type-tab" data-tipo="transferencia">Transferência</button>
+        </div>
+        <button class="icon-btn" id="lanc-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form class="modal-body" id="lanc-form" onsubmit="return false;">
+        <div class="lanc-form-grid">
+          <div class="form-row col-span-2">
+            <label for="lf-valor">Valor (R$) *</label>
+            <div class="input-with-calc">
+              <input id="lf-valor" type="number" step="0.01" min="0" class="big-input" placeholder="0,00" required>
+              <button type="button" class="calc-btn" id="lf-valor-calc" title="Abrir calculadora">
+                <span class="material-icons-outlined">calculate</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="lf-data">Data *</label>
+            <input id="lf-data" type="date" required>
+          </div>
+          <div class="form-row">
+            <label>Status</label>
+            <div class="status-selector" id="lf-status-selector" role="radiogroup" aria-label="Status">
+              <button type="button" class="status-btn" data-status="confirmado" title="Confirmado — dinheiro entrou/saiu" aria-label="Confirmado">
+                <span class="material-icons-outlined">check</span>
+              </button>
+              <button type="button" class="status-btn" data-status="conciliado" title="Conciliado — batido com o extrato" aria-label="Conciliado">
+                <span class="material-icons-outlined">done_all</span>
+              </button>
+            </div>
+            <small class="status-hint" id="lf-status-hint">—</small>
+          </div>
+          <div class="form-row col-span-2" id="lf-row-repeticao">
+            <label>Repetição</label>
+            <div class="rep-radios">
+              <label><input type="radio" name="lf-rep" value="unica" checked> Única</label>
+              <label><input type="radio" name="lf-rep" value="parcelada"> Parcelada</label>
+              <label><input type="radio" name="lf-rep" value="fixa"> Fixa</label>
+            </div>
+            <div class="rep-detail hidden" id="rep-detail-parcelada">
+              <div class="rep-grid">
+                <div class="form-row">
+                  <label for="lf-parc-period">Periodicidade *</label>
+                  <select id="lf-parc-period">
+                    <option value="diaria">Diária</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="mensal" selected>Mensal</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="lf-parc-intervalo" id="lf-parc-intervalo-label">Repete-se a cada N meses *</label>
+                  <input id="lf-parc-intervalo" type="number" min="1" value="1">
+                </div>
+                <div class="form-row">
+                  <label for="lf-parc-num">Número de parcelas *</label>
+                  <input id="lf-parc-num" type="number" min="2" value="2">
+                </div>
+                <div class="form-row">
+                  <label for="lf-parc-ini">Parcela inicial</label>
+                  <input id="lf-parc-ini" type="number" min="1" value="1">
+                </div>
+                <div class="form-row col-span-2 rep-checkbox">
+                  <input type="checkbox" id="lf-parc-por">
+                  <label for="lf-parc-por">O valor informado é por parcela (não o total)</label>
+                </div>
+              </div>
+            </div>
+            <div class="rep-detail hidden" id="rep-detail-fixa">
+              <div class="rep-grid">
+                <div class="form-row">
+                  <label for="lf-fix-period">Periodicidade *</label>
+                  <select id="lf-fix-period">
+                    <option value="diaria">Diária</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="mensal" selected>Mensal</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="lf-fix-intervalo" id="lf-fix-intervalo-label">Repete-se a cada N meses *</label>
+                  <input id="lf-fix-intervalo" type="number" min="1" value="1">
+                </div>
+                <div class="form-row col-span-2 rep-checkbox">
+                  <input type="checkbox" id="lf-fix-limit">
+                  <label for="lf-fix-limit">Definir total de ocorrências</label>
+                </div>
+                <div class="form-row col-span-2 hidden" id="lf-fix-total-row">
+                  <label for="lf-fix-total">Total de ocorrências</label>
+                  <input id="lf-fix-total" type="number" min="1" value="12">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row col-span-2">
+            <label for="lf-descricao">Descrição *</label>
+            <input id="lf-descricao" type="text" required autocomplete="off">
+            <div class="regra-sugestao hidden" id="lf-regra-sugestao"></div>
+          </div>
+          <div class="form-row col-span-2" id="lf-row-onde">
+            <label for="lf-onde-display">Conta / Cartão *</label>
+            <div class="combobox" id="lf-onde-combo">
+              <div class="cb-control">
+                <input type="text" class="cb-input" id="lf-onde-display" placeholder="Digite ou clique para escolher" autocomplete="off">
+                <button type="button" class="cb-clear" id="lf-onde-clear" tabindex="-1" title="Limpar">×</button>
+                <button type="button" class="cb-toggle" id="lf-onde-toggle" tabindex="-1" title="Abrir lista">▼</button>
+              </div>
+              <input type="hidden" id="lf-onde">
+              <div class="cb-list hidden" id="lf-onde-list"></div>
+            </div>
+          </div>
+          <div class="form-row" id="lf-row-fatura" style="display:none">
+            <label for="lf-fatura-comp">
+              Fatura (vence em)
+              <span class="help-tip" title="Mês de vencimento da fatura a que esta compra pertence. Pré-preenchido pelo ciclo do cartão — ajuste se a compra caiu em outra fatura.">ⓘ</span>
+            </label>
+            <input type="month" id="lf-fatura-comp">
+          </div>
+          <div class="form-row" id="lf-row-orig" style="display:none">
+            <label for="lf-conta-origem">Conta de origem</label>
+            <select id="lf-conta-origem"></select>
+          </div>
+          <div class="form-row" id="lf-row-dest" style="display:none">
+            <label for="lf-conta-destino">Conta de destino</label>
+            <select id="lf-conta-destino"></select>
+          </div>
+          <div class="form-row" id="lf-row-categoria">
+            <label for="lf-categoria-display">Categoria</label>
+            <div class="combobox" id="lf-categoria-combo">
+              <div class="cb-control">
+                <input type="text" class="cb-input" id="lf-categoria-display" placeholder="Digite ou clique para escolher" autocomplete="off">
+                <button type="button" class="cb-clear" id="lf-categoria-clear" tabindex="-1" title="Limpar">×</button>
+                <button type="button" class="cb-toggle" id="lf-categoria-toggle" tabindex="-1" title="Abrir lista">▼</button>
+              </div>
+              <input type="hidden" id="lf-categoria">
+              <div class="cb-list hidden" id="lf-categoria-list"></div>
+            </div>
+          </div>
+          <div class="form-row" id="lf-row-centro">
+            <label for="lf-centro">Centro de custo</label>
+            <select id="lf-centro"></select>
+          </div>
+          <div class="form-row col-span-2">
+            <label for="lf-observacao">Observação</label>
+            <textarea id="lf-observacao" rows="2"></textarea>
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="lanc-modal-cancel">Cancelar</button>
+        <button type="button" class="btn" id="lanc-modal-save-new" title="Salva e abre um novo">
+          <span class="material-icons-outlined">add</span> Salvar e novo
+        </button>
+        <button type="button" class="btn btn-primary" id="lanc-modal-save">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de cartão (layout custom com picker de logo) -->
+  <div id="cartao-modal" class="modal hidden">
+    <div class="modal-bg" id="cartao-modal-bg"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3 id="cartao-modal-title" style="margin:0; font-size:16px; flex:1">Novo cartão</h3>
+        <button class="icon-btn" id="cartao-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form class="modal-body" id="cartao-form" onsubmit="return false;">
+        <div class="lanc-form-grid">
+          <div class="form-row col-span-2">
+            <label for="kf-nome">Nome *</label>
+            <div class="input-with-icon">
+              <input id="kf-nome" type="text" required>
+              <button type="button" class="icon-picker-btn" id="kf-icon-btn" title="Escolher logo">
+                <span class="material-icons-outlined" id="kf-icon-display">credit_card</span>
+              </button>
+              <div class="icon-picker hidden" id="kf-icon-picker">
+                <!-- preenchido via JS pra evitar duplicação -->
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="kf-bandeira">Bandeira</label>
+            <select id="kf-bandeira">
+              <option value="">— —</option>
+              <option value="Visa">Visa</option>
+              <option value="Mastercard">Mastercard</option>
+              <option value="Elo">Elo</option>
+              <option value="Amex">American Express</option>
+              <option value="Hipercard">Hipercard</option>
+              <option value="Outros">Outros</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="kf-conta-pagamento">Conta de pagamento *</label>
+            <select id="kf-conta-pagamento" required></select>
+          </div>
+          <div class="form-row">
+            <label for="kf-dia-fechamento">Dia de fechamento *</label>
+            <input id="kf-dia-fechamento" type="number" min="1" max="31" value="1">
+          </div>
+          <div class="form-row">
+            <label for="kf-dia-vencimento">Dia de vencimento *</label>
+            <input id="kf-dia-vencimento" type="number" min="1" max="31" value="10">
+          </div>
+          <div class="form-row col-span-2">
+            <label for="kf-limite">Limite (R$)</label>
+            <input id="kf-limite" type="text" class="big-input" inputmode="decimal" placeholder="0,00">
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="cartao-modal-cancel">Cancelar</button>
+        <button type="button" class="btn" id="cartao-modal-save-new">
+          <span class="material-icons-outlined">add</span> Salvar e novo
+        </button>
+        <button type="button" class="btn btn-primary" id="cartao-modal-save">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de conta (layout custom) -->
+  <div id="conta-modal" class="modal hidden">
+    <div class="modal-bg" id="conta-modal-bg"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3 id="conta-modal-title" style="margin:0; font-size:16px; flex:1">Nova conta</h3>
+        <button class="icon-btn" id="conta-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form class="modal-body" id="conta-form" onsubmit="return false;">
+        <div class="lanc-form-grid">
+          <div class="form-row">
+            <label for="cf-tipo">Tipo</label>
+            <select id="cf-tipo">
+              <option value="corrente">Conta corrente</option>
+              <option value="poupanca">Poupança</option>
+              <option value="vale">Vale alimentação/refeição</option>
+              <option value="dinheiro">Dinheiro / Carteira</option>
+              <option value="investimento">Investimento</option>
+              <option value="emprestimo">Empréstimo / Dívida</option>
+              <option value="outra">Outra</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="cf-moeda">Moeda</label>
+            <select id="cf-moeda">
+              <option value="BRL" selected>Real (R$)</option>
+              <option value="USD">Dólar (US$)</option>
+              <option value="EUR">Euro (€)</option>
+              <option value="GBP">Libra (£)</option>
+            </select>
+          </div>
+          <div class="form-row col-span-2">
+            <label for="cf-nome">Nome *</label>
+            <div class="input-with-icon">
+              <input id="cf-nome" type="text" required>
+              <button type="button" class="icon-picker-btn" id="cf-icon-btn" title="Escolher ícone">
+                <span class="material-icons-outlined" id="cf-icon-display">account_balance</span>
+              </button>
+              <div class="icon-picker hidden" id="cf-icon-picker">
+                <div class="picker-tabs">
+                  <button type="button" class="picker-tab active" data-picker-tab="icons">Ícones</button>
+                  <button type="button" class="picker-tab" data-picker-tab="banks">Bancos</button>
+                  <button type="button" class="picker-tab" data-picker-tab="url">URL</button>
+                </div>
+                <div class="picker-pane" data-pane="icons">
+                  <div class="picker-grid">
+                    <button type="button" class="icon-option" data-icon="account_balance" title="Conta bancária"><span class="material-icons-outlined">account_balance</span></button>
+                    <button type="button" class="icon-option" data-icon="account_balance_wallet" title="Carteira"><span class="material-icons-outlined">account_balance_wallet</span></button>
+                    <button type="button" class="icon-option" data-icon="savings" title="Poupança"><span class="material-icons-outlined">savings</span></button>
+                    <button type="button" class="icon-option" data-icon="payments" title="Dinheiro"><span class="material-icons-outlined">payments</span></button>
+                    <button type="button" class="icon-option" data-icon="attach_money" title="Dinheiro"><span class="material-icons-outlined">attach_money</span></button>
+                    <button type="button" class="icon-option" data-icon="paid" title="Pago"><span class="material-icons-outlined">paid</span></button>
+                    <button type="button" class="icon-option" data-icon="credit_card" title="Cartão"><span class="material-icons-outlined">credit_card</span></button>
+                    <button type="button" class="icon-option" data-icon="credit_score" title="Crédito"><span class="material-icons-outlined">credit_score</span></button>
+                    <button type="button" class="icon-option" data-icon="trending_up" title="Investimento"><span class="material-icons-outlined">trending_up</span></button>
+                    <button type="button" class="icon-option" data-icon="monetization_on" title="Dinheiro"><span class="material-icons-outlined">monetization_on</span></button>
+                    <button type="button" class="icon-option" data-icon="currency_exchange" title="Câmbio"><span class="material-icons-outlined">currency_exchange</span></button>
+                    <button type="button" class="icon-option" data-icon="diamond" title="Reserva"><span class="material-icons-outlined">diamond</span></button>
+                    <button type="button" class="icon-option" data-icon="request_quote" title="Recibo"><span class="material-icons-outlined">request_quote</span></button>
+                    <button type="button" class="icon-option" data-icon="receipt_long" title="Recibo"><span class="material-icons-outlined">receipt_long</span></button>
+                    <button type="button" class="icon-option" data-icon="store" title="Loja"><span class="material-icons-outlined">store</span></button>
+                    <button type="button" class="icon-option" data-icon="shopping_cart" title="Compras"><span class="material-icons-outlined">shopping_cart</span></button>
+                  </div>
+                </div>
+                <div class="picker-pane hidden" data-pane="banks">
+                  <div class="picker-grid bank-grid">
+                    <button type="button" class="bank-option" data-domain="itau.com.br"        title="Itaú"><img src="https://www.google.com/s2/favicons?domain=itau.com.br&sz=64" alt="Itaú"></button>
+                    <button type="button" class="bank-option" data-domain="bb.com.br"          title="Banco do Brasil"><img src="https://www.google.com/s2/favicons?domain=bb.com.br&sz=64" alt="BB"></button>
+                    <button type="button" class="bank-option" data-domain="bradesco.com.br"    title="Bradesco"><img src="https://www.google.com/s2/favicons?domain=bradesco.com.br&sz=64" alt="Bradesco"></button>
+                    <button type="button" class="bank-option" data-domain="santander.com.br"   title="Santander"><img src="https://www.google.com/s2/favicons?domain=santander.com.br&sz=64" alt="Santander"></button>
+                    <button type="button" class="bank-option" data-domain="caixa.gov.br"       title="Caixa"><img src="https://www.google.com/s2/favicons?domain=caixa.gov.br&sz=64" alt="Caixa"></button>
+                    <button type="button" class="bank-option" data-domain="nubank.com.br"      title="Nubank"><img src="https://www.google.com/s2/favicons?domain=nubank.com.br&sz=64" alt="Nubank"></button>
+                    <button type="button" class="bank-option" data-domain="bancointer.com.br"  title="Inter"><img src="https://www.google.com/s2/favicons?domain=bancointer.com.br&sz=64" alt="Inter"></button>
+                    <button type="button" class="bank-option" data-domain="c6bank.com.br"      title="C6 Bank"><img src="https://www.google.com/s2/favicons?domain=c6bank.com.br&sz=64" alt="C6"></button>
+                    <button type="button" class="bank-option" data-domain="btgpactual.com"     title="BTG Pactual"><img src="https://www.google.com/s2/favicons?domain=btgpactual.com&sz=64" alt="BTG"></button>
+                    <button type="button" class="bank-option" data-domain="xpi.com.br"         title="XP"><img src="https://www.google.com/s2/favicons?domain=xpi.com.br&sz=64" alt="XP"></button>
+                    <button type="button" class="bank-option" data-domain="sicredi.com.br"     title="Sicredi"><img src="https://www.google.com/s2/favicons?domain=sicredi.com.br&sz=64" alt="Sicredi"></button>
+                    <button type="button" class="bank-option" data-domain="sicoob.com.br"      title="Sicoob"><img src="https://www.google.com/s2/favicons?domain=sicoob.com.br&sz=64" alt="Sicoob"></button>
+                    <button type="button" class="bank-option" data-domain="bancopan.com.br"    title="Banco Pan"><img src="https://www.google.com/s2/favicons?domain=bancopan.com.br&sz=64" alt="Pan"></button>
+                    <button type="button" class="bank-option" data-domain="safra.com.br"       title="Safra"><img src="https://www.google.com/s2/favicons?domain=safra.com.br&sz=64" alt="Safra"></button>
+                    <button type="button" class="bank-option" data-domain="picpay.com"         title="PicPay"><img src="https://www.google.com/s2/favicons?domain=picpay.com&sz=64" alt="PicPay"></button>
+                    <button type="button" class="bank-option" data-domain="mercadopago.com.br" title="Mercado Pago"><img src="https://www.google.com/s2/favicons?domain=mercadopago.com.br&sz=64" alt="MP"></button>
+                    <button type="button" class="bank-option" data-domain="pluxee.com.br"      title="Pluxee (ex-Sodexo)"><img src="https://www.google.com/s2/favicons?domain=pluxee.com.br&sz=64" alt="Pluxee"></button>
+                    <button type="button" class="bank-option" data-domain="alelo.com.br"       title="Alelo"><img src="https://www.google.com/s2/favicons?domain=alelo.com.br&sz=64" alt="Alelo"></button>
+                    <button type="button" class="bank-option" data-domain="vr.com.br"          title="VR Benefícios"><img src="https://www.google.com/s2/favicons?domain=vr.com.br&sz=64" alt="VR"></button>
+                    <button type="button" class="bank-option" data-domain="ticket.com.br"      title="Ticket"><img src="https://www.google.com/s2/favicons?domain=ticket.com.br&sz=64" alt="Ticket"></button>
+                    <button type="button" class="bank-option" data-domain="clear.com.br"       title="Clear Corretora"><img src="https://www.google.com/s2/favicons?domain=clear.com.br&sz=64" alt="Clear"></button>
+                    <button type="button" class="bank-option" data-domain="nomadglobal.com"    title="Nomad"><img src="https://www.google.com/s2/favicons?domain=nomadglobal.com&sz=64" alt="Nomad"></button>
+                  </div>
+                </div>
+                <div class="picker-pane hidden" data-pane="url">
+                  <div class="picker-url-row">
+                    <input type="url" id="cf-icon-url-input" placeholder="https://...">
+                    <button type="button" id="cf-icon-url-apply" class="btn">Aplicar</button>
+                  </div>
+                  <div class="muted" style="font-size:11px;margin-top:6px">URL pública de imagem (Drive compartilhado, GitHub, qualquer site).</div>
+                </div>
+                <div class="picker-footer">
+                  <button type="button" id="cf-icon-clear" class="btn-link">Voltar ao ícone padrão</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="cf-data">Data do saldo inicial *</label>
+            <input id="cf-data" type="date" required>
+          </div>
+          <div class="form-row">
+            <label for="cf-saldo" id="cf-saldo-label">Saldo (R$)</label>
+            <div class="saldo-row">
+              <input id="cf-saldo" type="number" step="0.01" value="0">
+              <div class="saldo-radios">
+                <label><input type="radio" name="cf-sinal" value="credor" checked> Credor</label>
+                <label><input type="radio" name="cf-sinal" value="devedor"> Devedor</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-row col-span-2" id="cf-bank-section">
+            <details>
+              <summary class="bank-summary">Informações bancárias <span class="muted">(opcional)</span></summary>
+              <div class="rep-grid" style="margin-top:12px">
+                <div class="form-row col-span-2">
+                  <label for="cf-banco">Banco</label>
+                  <input id="cf-banco" type="text" placeholder="Nubank, Itaú, Bradesco...">
+                </div>
+                <div class="form-row">
+                  <label for="cf-agencia">Agência</label>
+                  <input id="cf-agencia" type="text">
+                </div>
+                <div class="form-row">
+                  <label for="cf-numero">Número da conta</label>
+                  <input id="cf-numero" type="text">
+                </div>
+                <div class="form-row col-span-2">
+                  <label for="cf-limite">Limite / cheque especial (R$)</label>
+                  <input id="cf-limite" type="number" step="0.01" value="0">
+                </div>
+                <div class="form-row">
+                  <label for="cf-contato">Contato</label>
+                  <input id="cf-contato" type="text">
+                </div>
+                <div class="form-row">
+                  <label for="cf-telefone">Telefone</label>
+                  <input id="cf-telefone" type="tel">
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="conta-modal-cancel">Cancelar</button>
+        <button type="button" class="btn" id="conta-modal-save-new">
+          <span class="material-icons-outlined">add</span> Salvar e nova
+        </button>
+        <button type="button" class="btn btn-primary" id="conta-modal-save">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de orçamento (custom) -->
+  <div id="orc-modal" class="modal hidden">
+    <div class="modal-bg" id="orc-modal-bg"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3 id="orc-modal-title" style="margin:0; font-size:16px; flex:1">Novo orçamento</h3>
+        <button class="icon-btn" id="orc-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form class="modal-body" id="orc-form" onsubmit="return false;">
+        <div class="lanc-form-grid">
+          <div class="form-row col-span-2">
+            <label>Aplicar a</label>
+            <div class="type-tabs" id="of-tipo-tabs">
+              <button type="button" class="type-tab" data-tipo="categoria">Categoria</button>
+              <button type="button" class="type-tab" data-tipo="centro">Centro</button>
+            </div>
+          </div>
+          <div class="form-row col-span-2" id="of-row-categoria">
+            <label for="of-categoria-display">Categoria *</label>
+            <div class="combobox" id="of-categoria-combo">
+              <div class="cb-control">
+                <input type="text" class="cb-input" id="of-categoria-display" placeholder="Digite ou clique para escolher" autocomplete="off">
+                <button type="button" class="cb-clear" id="of-categoria-clear" tabindex="-1" title="Limpar">×</button>
+                <button type="button" class="cb-toggle" id="of-categoria-toggle" tabindex="-1" title="Abrir lista">▼</button>
+              </div>
+              <input type="hidden" id="of-categoria">
+              <div class="cb-list hidden" id="of-categoria-list"></div>
+            </div>
+          </div>
+          <div class="form-row col-span-2" id="of-row-centro" style="display:none">
+            <label for="of-centro">Centro de custo *</label>
+            <select id="of-centro"></select>
+          </div>
+          <div class="form-row col-span-2">
+            <label for="of-nome">Nome (opcional)</label>
+            <input id="of-nome" type="text" placeholder="ex.: Alimentação 2026">
+          </div>
+          <div class="form-row col-span-2">
+            <label for="of-valor">Valor mensal (R$) *</label>
+            <input id="of-valor" type="text" class="big-input" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div class="form-row">
+            <label for="of-data-inicio">Aplicar a partir de *</label>
+            <input id="of-data-inicio" type="month">
+          </div>
+          <div class="form-row">
+            <label for="of-data-fim">Até (opcional)</label>
+            <input id="of-data-fim" type="month">
+          </div>
+          <div class="form-row col-span-2 checkbox-row">
+            <input type="checkbox" id="of-mostrar-restante">
+            <label for="of-mostrar-restante">
+              Mostrar restante como lançamento virtual nas Movimentações
+              <span class="help-tip" title="Adiciona uma linha 'Restante orçamento: X' no fim do mês com a diferença entre orçado e consumido. Útil pra ver o impacto total do orçamento no resultado/saldo projetado.">ⓘ</span>
+            </label>
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="orc-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="orc-modal-save">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para escolher escopo em lançamentos de série (parcelados/fixos) -->
+  <div id="serie-modal" class="modal hidden">
+    <div class="modal-bg" id="serie-modal-bg"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="serie-modal-title" style="margin:0; font-size:16px; flex:1">Aplicar a quais lançamentos?</h3>
+        <button class="icon-btn" id="serie-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" id="serie-modal-desc" style="margin:0 0 14px;font-size:13px;line-height:1.5">
+          Este lançamento faz parte de uma série.
+        </p>
+        <div class="serie-options" id="serie-modal-options">
+          <label class="serie-option">
+            <input type="radio" name="serie-scope" value="one" checked>
+            <div>
+              <strong>Somente este lançamento</strong>
+              <div class="muted">As outras parcelas/repetições não mudam.</div>
+            </div>
+          </label>
+          <label class="serie-option">
+            <input type="radio" name="serie-scope" value="forward">
+            <div>
+              <strong>Este e os próximos</strong>
+              <div class="muted" id="serie-forward-count">—</div>
+            </div>
+          </label>
+          <label class="serie-option">
+            <input type="radio" name="serie-scope" value="all">
+            <div>
+              <strong>Todos da série</strong>
+              <div class="muted" id="serie-all-count">—</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="serie-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="serie-modal-ok">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edição em massa -->
+  <div id="bulk-modal" class="modal hidden">
+    <div class="modal-bg" id="bulk-modal-bg"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3 id="bulk-modal-title" style="margin:0;font-size:15px;flex:1">Editar selecionados</h3>
+        <button class="icon-btn" id="bulk-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <form class="modal-body" id="bulk-form" onsubmit="return false;">
+        <p class="muted" id="bulk-modal-desc" style="margin:0 0 12px;font-size:13px"></p>
+        <div class="lanc-form-grid">
+          <div class="form-row col-span-2" id="bulk-row-categoria">
+            <label for="bulk-categoria-display">Categoria</label>
+            <div class="combobox" id="bulk-categoria-combo">
+              <div class="cb-control">
+                <input type="text" class="cb-input" id="bulk-categoria-display" placeholder="Deixe vazio pra não alterar" autocomplete="off">
+                <button type="button" class="cb-clear" id="bulk-categoria-clear" tabindex="-1" title="Limpar">×</button>
+                <button type="button" class="cb-toggle" id="bulk-categoria-toggle" tabindex="-1" title="Abrir lista">▼</button>
+              </div>
+              <input type="hidden" id="bulk-categoria">
+              <div class="cb-list hidden" id="bulk-categoria-list"></div>
+            </div>
+          </div>
+          <div class="form-row col-span-2" id="bulk-row-centro">
+            <label for="bulk-centro">Centro de custo</label>
+            <select id="bulk-centro"></select>
+          </div>
+          <div class="form-row col-span-2" id="bulk-row-conta" style="display:none">
+            <label for="bulk-conta">Mover para a conta</label>
+            <select id="bulk-conta"></select>
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="bulk-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="bulk-modal-ok">Aplicar aos selecionados</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pagar fatura -->
+  <div id="pagar-fatura-modal" class="modal hidden">
+    <div class="modal-bg" id="pagar-fatura-modal-bg"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0;font-size:15px;flex:1">
+          <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">payments</span>
+          Pagar fatura
+        </h3>
+        <button class="icon-btn" id="pagar-fatura-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Cartão</label>
+          <input type="text" id="pf-cartao" readonly>
+        </div>
+        <div class="form-row">
+          <label>Valor da fatura</label>
+          <input type="text" id="pf-valor" readonly>
+        </div>
+        <div class="form-row">
+          <label for="pf-conta">Conta a debitar <span class="muted" style="font-weight:400">(padrão = conta cadastrada no cartão)</span></label>
+          <select id="pf-conta"></select>
+        </div>
+        <div class="form-row">
+          <label for="pf-data">Data do pagamento</label>
+          <input type="date" id="pf-data">
+        </div>
+        <div class="form-row">
+          <label for="pf-status">Status</label>
+          <select id="pf-status">
+            <option value="pendente">Pendente</option>
+            <option value="agendado">Agendado</option>
+            <option value="confirmado">Confirmado (já saiu)</option>
+            <option value="conciliado">Conciliado</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="pagar-fatura-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="pagar-fatura-ok">
+          <span class="material-icons-outlined">check</span> Confirmar pagamento
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calculadora -->
+  <div id="calc-modal" class="modal hidden">
+    <div class="modal-bg" id="calc-modal-bg"></div>
+    <div class="modal-content calc-content">
+      <div class="modal-header">
+        <h3 style="margin:0;font-size:15px;flex:1">
+          <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle">calculate</span>
+          Calculadora
+        </h3>
+        <button class="icon-btn" id="calc-modal-close" title="Fechar (Esc)">
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <div class="calc-body">
+        <div class="calc-display">
+          <input id="calc-expr" type="text" class="calc-expr" placeholder="0" autocomplete="off">
+          <div class="calc-result" id="calc-result">= 0,00</div>
+        </div>
+        <div class="calc-keys">
+          <button type="button" class="calc-key calc-fn" data-calc="C">C</button>
+          <button type="button" class="calc-key calc-fn" data-calc="(">(</button>
+          <button type="button" class="calc-key calc-fn" data-calc=")">)</button>
+          <button type="button" class="calc-key calc-op" data-calc="/">÷</button>
+
+          <button type="button" class="calc-key" data-calc="7">7</button>
+          <button type="button" class="calc-key" data-calc="8">8</button>
+          <button type="button" class="calc-key" data-calc="9">9</button>
+          <button type="button" class="calc-key calc-op" data-calc="*">×</button>
+
+          <button type="button" class="calc-key" data-calc="4">4</button>
+          <button type="button" class="calc-key" data-calc="5">5</button>
+          <button type="button" class="calc-key" data-calc="6">6</button>
+          <button type="button" class="calc-key calc-op" data-calc="-">−</button>
+
+          <button type="button" class="calc-key" data-calc="1">1</button>
+          <button type="button" class="calc-key" data-calc="2">2</button>
+          <button type="button" class="calc-key" data-calc="3">3</button>
+          <button type="button" class="calc-key calc-op" data-calc="+">+</button>
+
+          <button type="button" class="calc-key calc-fn" data-calc="back" title="Apagar">⌫</button>
+          <button type="button" class="calc-key" data-calc="0">0</button>
+          <button type="button" class="calc-key" data-calc=",">,</button>
+          <button type="button" class="calc-key calc-eq" data-calc="=">=</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="calc-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="calc-modal-ok">Usar valor</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Overlay de login (cobre tudo até autenticar) -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-box">
+      <div class="auth-brand">
+        <span class="material-icons-outlined">account_balance_wallet</span>
+        <span>FlowFinance</span>
+      </div>
+
+      <!-- Modo: aguardando -->
+      <div class="auth-pane" data-auth-mode="loading">
+        <div class="auth-loading">
+          <span class="material-icons-outlined spin">progress_activity</span>
+          <span>Verificando sessão…</span>
+        </div>
+      </div>
+
+      <!-- Modo: setup (sem usuários ainda) -->
+      <div class="auth-pane hidden" data-auth-mode="setup">
+        <h2>Primeiro acesso</h2>
+        <p class="muted">
+          Ninguém cadastrado ainda. Defina sua senha de acesso ao app.
+          Sua conta Google já está identificada como <strong id="auth-setup-email">—</strong>.
+        </p>
+        <div class="form-row">
+          <label for="auth-setup-pwd">Crie uma senha (mín. 4 caracteres)</label>
+          <input id="auth-setup-pwd" type="password" autocomplete="new-password">
+        </div>
+        <div class="form-row">
+          <label for="auth-setup-pwd2">Confirme a senha</label>
+          <input id="auth-setup-pwd2" type="password" autocomplete="new-password">
+        </div>
+        <div class="auth-error hidden" id="auth-setup-error"></div>
+        <button class="btn btn-primary auth-submit" id="auth-setup-btn">
+          <span class="material-icons-outlined">check</span> Cadastrar e entrar
+        </button>
+      </div>
+
+      <!-- Modo: login -->
+      <div class="auth-pane hidden" data-auth-mode="login">
+        <h2>Entrar</h2>
+        <p class="muted">
+          Conta Google: <strong id="auth-login-email">—</strong>
+        </p>
+        <div class="form-row">
+          <label for="auth-login-pwd">Senha</label>
+          <input id="auth-login-pwd" type="password" autocomplete="current-password">
+        </div>
+        <div class="auth-error hidden" id="auth-login-error"></div>
+        <button class="btn btn-primary auth-submit" id="auth-login-btn">
+          <span class="material-icons-outlined">login</span> Entrar
+        </button>
+      </div>
+
+      <!-- Modo: negado (Google logado, mas email não autorizado) -->
+      <div class="auth-pane hidden" data-auth-mode="denied">
+        <h2>Acesso negado</h2>
+        <p class="muted">
+          A conta Google <strong id="auth-denied-email">—</strong> não está autorizada
+          a usar este app. Peça para um usuário autorizado adicionar você em
+          Configurações → Usuários.
+        </p>
+        <button class="btn" id="auth-denied-retry">
+          <span class="material-icons-outlined">refresh</span> Tentar de novo
+        </button>
+      </div>
+
+      <!-- Modo: bloqueado por inatividade -->
+      <div class="auth-pane hidden" data-auth-mode="locked">
+        <h2>Sessão expirada</h2>
+        <p class="muted">
+          Você ficou inativo por muito tempo. Digite sua senha para continuar.
+          <br><span id="auth-locked-email">—</span>
+        </p>
+        <div class="form-row">
+          <label for="auth-locked-pwd">Senha</label>
+          <input id="auth-locked-pwd" type="password" autocomplete="current-password">
+        </div>
+        <div class="auth-error hidden" id="auth-locked-error"></div>
+        <button class="btn btn-primary auth-submit" id="auth-locked-btn">
+          <span class="material-icons-outlined">lock_open</span> Desbloquear
+        </button>
+      </div>
+
+      <div class="auth-dedication">
+        Este app nasceu pra que Willyam e Aline — amor e flor — cuidem juntos
+        da casa, dos sonhos e das finanças da Família Santos Reis.
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <?!= include('app'); ?>
+</body>
+</html>
