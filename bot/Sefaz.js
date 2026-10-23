@@ -244,9 +244,15 @@ const Sefaz = (function () {
     CacheService.getScriptCache().remove(chavePausa_(url));
   }
 
+  // Portais que só atendem acessos do Brasil: o Google (e o GitHub) ficam esperando
+  // até cair. Testado em 23/10/2026: nfce.sefaz.rn.gov.br não responde de fora;
+  // o endereço antigo nfce.set.rn.gov.br hoje só devolve 404.
+  const SO_DO_BRASIL = /nfce\.(sefaz|set)\.rn\.gov\.br/i;
+
   function buscarTexto(url) {
     // O Apps Script recusa "|" sem codificar na URL
     url = String(url).replace(/\|/g, '%7C');
+    if (SO_DO_BRASIL.test(url) && Config.get('SEFAZ_RN_DIRETO') !== '1') throw new Error('o portal do RN só atende acessos de dentro do Brasil');
     if (emPausa(url)) throw new Error('portal da SEFAZ em pausa depois de falhar há pouco');
     // Se esta execução travar e for cortada, a pausa fica valendo
     const cache = CacheService.getScriptCache();
