@@ -610,20 +610,21 @@ function getMovimentacoesView(ano, mes, contasIds, statusList, cartoesIds) {
       if (!dataVenc) return;
       const yyyymm = String(dataVenc).slice(0, 7);
 
-      // Já existe pagamento de fatura desse cartão nesse mês? (perna +cartao da transferência)
-      const jaPago = lancsAll.some(l =>
-        l.transferencia_id &&
-        String(l.cartao) === String(c.id) &&
-        (Number(l.valor) || 0) > 0 &&
-        String(l.data).slice(0, 7) === yyyymm
-      );
-      if (jaPago) return;
+      // Quanto já foi pago dessa fatura (perna +cartao da transferência). Se pagou
+      // tudo, não projeta; se pagou parte, projeta só o que falta.
+      let jaPago = 0;
+      lancsAll.forEach(l => {
+        if (!l.transferencia_id || String(l.cartao) !== String(c.id) || (Number(l.valor) || 0) <= 0) return;
+        const comp = l.fatura_competencia ? String(l.fatura_competencia).slice(0, 7) : String(l.data).slice(0, 7);
+        if (comp === fatura.competencia || String(l.data).slice(0, 7) === yyyymm) jaPago += Number(l.valor) || 0;
+      });
+      if (jaPago >= Math.abs(total) - 0.01) return;
 
       lancsMes.push({
         id: '_v_pagfat_' + c.id,
         data: dataVenc,
-        descricao: 'Fatura ' + c.nome + ' (a pagar)',
-        valor: total,                  // já é negativo (saída na conta)
+        descricao: 'Fatura ' + c.nome + (jaPago > 0.01 ? ' (restante a pagar)' : ' (a pagar)'),
+        valor: total + jaPago,         // já é negativo (saída na conta); desconta o que foi pago
         conta: c.conta_pagamento,
         cartao: '',
         categoria: '',

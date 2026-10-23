@@ -514,6 +514,7 @@ function ligarTelaGrande(tela) {
     const busca = tela.querySelector('#busca');
     if (busca) busca.oninput = function () { S.busca = busca.value; S.sel = new Set(); redesenharTabela(tela); };
   }
+  if (typeof ligarTelaG2 === 'function') ligarTelaG2(tela);
 }
 
 /** Redesenha só a tabela (mantém o foco na busca e nos filtros). */

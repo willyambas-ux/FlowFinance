@@ -1,0 +1,402 @@
+<script>
+'use strict';
+/* ============================================================================
+ * Tela grande — etapa 2: Cartões e faturas, Relatórios e Planejamento.
+ * ========================================================================== */
+
+// No menu lateral estas três deixam de abrir o clássico
+LATERAL.forEach(it => {
+  if (it.tela === 'cartoes') { delete it.tela; it.aba = 'cartoes'; }
+  if (it.tela === 'relatorios') { delete it.tela; it.aba = 'relatorios'; }
+  if (it.tela === 'metas') { delete it.tela; it.aba = 'planejamento'; }
+});
+PARA_CELULAR.cartoes = 'inicio';
+PARA_CELULAR.relatorios = 'painel';
+PARA_CELULAR.planejamento = 'painel';
+
+S.cart = { id: '', ano: 0, mes: 0 };
+S.cartDados = null;
+S.relPeriodo = '12';
+S.relDados = null;
+S.planDados = null;
+
+/** Chamado por carregarAba (novo_js) para as abas desta etapa. */
+function carregarAbaG2(aba, forcar, velho) {
+  if (aba === 'cartoes' && (forcar || !S.cartDados || velho)) {
+    const c = S.cart;
+    return run('appCartoes', c.id, c.ano || 0, c.mes || 0).then(d => { if (S.cart === c) S.cartDados = d; });
+  }
+  if (aba === 'relatorios' && (forcar || !S.relDados || velho)) {
+    const p = S.relPeriodo;
+    return run('appRelatorios', p).then(d => { if (S.relPeriodo === p) S.relDados = d; });
+  }
+  if (aba === 'planejamento' && (forcar || !S.planDados || velho)) {
+    return run('appPlanejamento').then(d => { S.planDados = d; });
+  }
+  return null;
+}
+
+function telaG2(aba) {
+  if (aba === 'cartoes') return telaCartoesG();
+  if (aba === 'relatorios') return telaRelatoriosG();
+  return telaPlanejamentoG();
+}
+
+function nomeMesCurto(ano, mes) { return MESES[mes - 1] + (ano !== partesData(hojeISO()).a ? ' ' + ano : ''); }
+
+/* ============================================================================
+ * Cartões e faturas
+ * ========================================================================== */
+
+function telaCartoesG() {
+  const d = S.cartDados;
+  let abas = '';
+  if (d && d.cartoes.length) {
+    abas = '<div class="g-abas-cartao" role="tablist" aria-label="Cartão">' + d.cartoes.map(c =>
+      '<button type="button" role="tab" class="filtro" data-cartao="' + esc(c.id) + '" aria-selected="' + (c.id === d.cartao.id) + '" aria-pressed="' + (c.id === d.cartao.id) + '">' + esc(c.nome) + '</button>').join('') + '</div>';
+  }
+  let h = cabecalhoGrande('Cartões e faturas', null, '', abas);
+  if (S.erro_cartoes && !d) return h + falhaTela(S.erro_cartoes);
+  if (!d) return h + '<div class="g-grade-3">' + esqueleto([170, 170, 170]) + '</div>' + esqueleto([360]);
+  if (!d.cartao) return h + '<div class="vazio g-vazio-grande">Nenhum cartão cadastrado. Cadastre em Configurações › Cadastros.</div>';
+
+  const f = d.fatura;
+  const statusTxt = { aberta: 'aberta', fechada: 'fechada, a pagar', paga: 'paga', parcial: 'paga em parte' }[f.status] || f.status;
+  const hoje = hojeISO();
+  const diasFecha = diasEntre(hoje, f.fechamento);
+  const quando = f.status === 'aberta' && diasFecha >= 0
+    ? 'fecha em ' + dataCurta(f.fechamento) + (diasFecha <= 10 ? ' (' + (diasFecha === 0 ? 'hoje' : 'daqui ' + diasFecha + (diasFecha === 1 ? ' dia' : ' dias')) + ')' : '')
+    : 'fechou em ' + dataCurta(f.fechamento);
+  h += '<div class="g-grade-cartao">';
+  h += '<section class="g-cartao g-escuro"><div class="g-entre"><span class="g-pergunta">Fatura de ' + esc(nomeMesCurto(f.ano, f.mes)) + ' · ' + esc(statusTxt) + '</span>' +
+    '<span class="g-nav-fatura"><button type="button" class="g-nav-btn" data-fatura="-1" aria-label="Fatura anterior">' + ICONE.esq + '</button>' +
+    '<button type="button" class="g-nav-btn" data-fatura="1" aria-label="Próxima fatura">' + ICONE.dir + '</button></span></div>' +
+    '<span class="g-total-fatura">' + brl(f.total) + '</span>' +
+    '<span class="g-rodape">' + esc(quando) + ' · vence ' + esc(dataCurta(f.vencimento)) + (d.cartao.conta_nome ? ' · paga pela ' + esc(d.cartao.conta_nome) : '') + '</span>' +
+    (f.status === 'parcial' ? '<span class="g-rodape">Pago ' + brl(f.pago) + ' · falta <b style="color:var(--destaque-texto)">' + brl(f.restante) + '</b></span>' : '') +
+    '<div class="g-botoes-linha">' +
+    (f.status !== 'paga' && f.total > 0 ? '<button type="button" class="btn btn-claro btn-pequeno" data-acao="pagar-fatura">' + (f.status === 'parcial' ? 'Pagar o restante' : 'Pagar fatura') + '</button>' : '<span class="g-rodape">' + (f.total > 0 ? 'Fatura quitada.' : 'Sem compras nesta fatura.') + '</span>') +
+    '<a class="btn btn-contorno btn-pequeno" href="' + esc(urlClassico('importar')) + '" target="_top">Conferir com o extrato</a></div></section>';
+
+  const usadoPct = d.limite.total > 0 ? Math.min(100, (d.limite.usado - d.futuro) / d.limite.total * 100) : 0;
+  const futuroPct = d.limite.total > 0 ? Math.min(100 - Math.max(0, usadoPct), d.futuro / d.limite.total * 100) : 0;
+  h += '<section class="g-cartao"><span class="g-pergunta">Limite</span>' +
+    (d.limite.total > 0 ? '<span class="g-numero">' + brl(d.limite.livre) + ' livres</span>' +
+      '<div class="g-barra-dupla" role="img" aria-label="Limite usado"><div style="width:' + Math.max(0, usadoPct).toFixed(1) + '%;background:var(--verde)"></div><div style="width:' + Math.max(0, futuroPct).toFixed(1) + '%;background:#8CC5B5"></div></div>' +
+      '<span class="g-rodape">' + brl(Math.max(0, d.limite.usado - d.futuro)) + ' em faturas a pagar · ' + brl(d.futuro) + ' em parcelas futuras · limite ' + brl(d.limite.total) + '</span>'
+      : '<span class="g-vazio">Limite não cadastrado.</span>') + '</section>';
+
+  h += '<section class="g-cartao"><span class="g-pergunta">Comparado com a média</span>';
+  if (d.variacao === null) h += '<span class="g-vazio">Ainda não há faturas anteriores para comparar.</span>';
+  else h += '<span class="g-numero ' + (d.variacao > 10 ? 'g-alerta' : (d.variacao < -10 ? 'positivo' : '')) + '">' + (d.variacao > 0 ? '+' : (d.variacao < 0 ? '−' : '')) + Math.abs(d.variacao) + '%</span>' +
+    '<span class="g-rodape">média das últimas faturas: ' + brl(d.media) + (d.maior_alta ? ' · maior alta: ' + esc(d.maior_alta.nome) + ' (+' + brl(d.maior_alta.dif) + ')' : '') + '</span>' +
+    (f.status === 'aberta' ? '<span class="g-rodape">A fatura ainda está aberta: o valor pode crescer até o fechamento.</span>' : '');
+  h += '</section></div>';
+
+  // Próximas faturas + por categoria
+  const max = Math.max.apply(null, d.serie.map(s => s.total).concat([1]));
+  h += '<div class="g-grade-1-14"><section class="g-cartao"><div class="g-entre"><h2>Faturas</h2><span class="g-suave">3 antes e 3 depois</span></div>' +
+    '<div class="g-barras" role="group" aria-label="Faturas por mês">' + d.serie.map(s => {
+      const cls = s.central ? 'central' : (s.competencia > f.competencia ? 'futura' : 'passada');
+      const pm = MESES_CURTOS[s.mes - 1];
+      return '<button type="button" class="g-barra-col" data-ir-fatura="' + s.ano + '-' + s.mes + '" aria-label="Fatura de ' + esc(MESES[s.mes - 1]) + ': ' + esc(brl(s.total)) + '">' +
+        '<span class="g-barra-val">' + (s.total > 0 ? numBR(s.total, 0) : '—') + '</span>' +
+        '<span class="g-barra ' + cls + '" style="height:' + Math.max(2, s.total / max * 140).toFixed(0) + 'px"></span>' +
+        '<span class="g-barra-rot">' + pm + '</span></button>';
+    }).join('') + '</div>' +
+    '<span class="g-rodape">Cinza: anteriores · verde: a selecionada · claro: o que já vai cair (parcelas). Clique para abrir.</span>';
+  if (f.categorias.length) {
+    const mc = f.categorias[0].total || 1;
+    h += '<h3 class="g-h3">Por categoria nesta fatura</h3>' + f.categorias.map(c =>
+      '<div class="cat-linha"><span style="font-weight:600">' + esc(c.nome) + '</span><b>' + brl(c.total) + '</b>' +
+      '<div class="barra-trilho"><div class="barra-cheia" style="width:' + (c.total / mc * 100).toFixed(1) + '%"></div></div></div>').join('');
+  }
+  h += '</section>';
+
+  h += '<section class="g-cartao g-sem-pad"><div class="g-entre g-pad-topo"><h2>Compras da fatura de ' + esc(nomeMesCurto(f.ano, f.mes)) + '</h2><span class="g-suave">' + f.compras.length + (f.compras.length === 1 ? ' compra' : ' compras') + '</span></div>';
+  if (!f.compras.length) h += '<p class="g-vazio" style="padding:0 20px 20px">Nenhuma compra nesta fatura.</p>';
+  else h += '<table class="g-tabela"><thead><tr><th class="g-col-pad">Data</th><th>Descrição</th><th>Categoria</th><th>Quem</th><th class="num">Valor</th><th class="g-col-acoes"><span class="sr">Mover</span></th></tr></thead><tbody>' +
+    f.compras.map(l => '<tr data-compra="' + esc(l.id) + '" tabindex="0"><td class="g-col-pad g-suave">' + esc(dataCurta(l.data)) + '</td>' +
+      '<td><b>' + esc(l.descricao) + '</b>' + (l.status === 'revisar' ? ' <span class="g-status revisar">a revisar</span>' : '') + '</td>' +
+      '<td>' + esc(nomeCategoria(l.categoria) || 'sem categoria') + '</td><td class="g-suave">' + esc(l.quem || '—') + '</td>' +
+      '<td class="num"><b>' + numBR(-l.valor) + '</b></td>' +
+      '<td class="g-col-acoes"><button type="button" class="g-x" data-mover="-1" data-id="' + esc(l.id) + '" aria-label="Mover para a fatura anterior" title="Mover para a fatura anterior">' + ICONE.esq + '</button>' +
+      '<button type="button" class="g-x" data-mover="1" data-id="' + esc(l.id) + '" aria-label="Mover para a próxima fatura" title="Mover para a próxima fatura">' + ICONE.dir + '</button></td></tr>').join('') +
+    '</tbody></table>';
+  h += '</section></div>';
+  return h;
+}
+
+function abrirPagarFatura() {
+  const d = S.cartDados, f = d.fatura;
+  const sugerido = f.status === 'parcial' ? f.restante : f.total;
+  const hoje = hojeISO();
+  const data = f.vencimento > hoje ? f.vencimento : hoje;
+  const contas = S.boot.contas.filter(c => c.tipo !== 'emprestimo' && c.tipo !== 'investimento');
+  const h = topoFolha('Pagar fatura de ' + nomeMesCurto(f.ano, f.mes)) +
+    '<p class="obs" style="margin:0 0 12px">' + esc(d.cartao.nome) + ' · total ' + brl(f.total) + (f.pago ? ' · já pago ' + brl(f.pago) : '') + '. Pode pagar só uma parte: o que faltar continua aparecendo como a pagar.</p>' +
+    '<div class="campos"><div class="campo"><label for="pg-valor">Valor</label><input id="pg-valor" inputmode="decimal" value="' + numBR(sugerido) + '"></div>' +
+    '<div class="campo"><label for="pg-conta">Sai da conta</label><select id="pg-conta">' + contas.map(c =>
+      '<option value="' + esc(c.id) + '"' + (c.id === d.cartao.conta_pagamento ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</select></div>' +
+    '<div class="campo"><label for="pg-data">Data</label><input id="pg-data" type="date" value="' + esc(data) + '"></div></div>' +
+    '<p class="obs">Data futura fica como agendado; até hoje, como pago.</p>' +
+    '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="confirmar-pg">Confirmar pagamento</button></div>';
+  abrirFolha(h, function (folha) {
+    const b = folha.querySelector('[data-acao="confirmar-pg"]');
+    const atualizar = function () { const v = textoParaNumero(folha.querySelector('#pg-valor').value); b.textContent = 'Confirmar pagamento' + (v ? ' · ' + brl(v) : ''); };
+    folha.querySelector('#pg-valor').oninput = atualizar; atualizar();
+    b.onclick = function () {
+      const v = textoParaNumero(folha.querySelector('#pg-valor').value);
+      if (!(v > 0)) { aviso('Informe o valor.', { erro: true }); return; }
+      b.disabled = true;
+      run('appPagarFatura', d.cartao.id, f.ano, f.mes, v, folha.querySelector('#pg-data').value, folha.querySelector('#pg-conta').value)
+        .then(function () { fecharFolha(); aviso('Pagamento de ' + brl(v) + ' registrado.'); invalidar(); })
+        .catch(function (e) { b.disabled = false; erro(e); });
+    };
+  });
+}
+
+/* ============================================================================
+ * Relatórios
+ * ========================================================================== */
+
+function telaRelatoriosG() {
+  const d = S.relDados;
+  const anos = d ? d.anos : (S.relAnos || []);
+  const ops = [['6', '6 meses'], ['12', '12 meses']].concat(anos.map(a => [a, a]));
+  const seg = '<div class="segmento g-seg" role="group" aria-label="Período" style="--n:' + ops.length + '">' + ops.map(o =>
+    '<button type="button" data-periodo="' + o[0] + '" aria-pressed="' + (S.relPeriodo === o[0]) + '">' + esc(o[1]) + '</button>').join('') + '</div>';
+  let h = cabecalhoGrande('Relatórios', null, '', seg);
+  if (S.erro_relatorios && !d) return h + falhaTela(S.erro_relatorios);
+  if (!d) return h + '<div class="g-grade-4">' + esqueleto([90, 90, 90, 90]) + '</div>' + esqueleto([260, 300]);
+  const k = d.kpis;
+  const varTxt = (v, bomSeSobe) => v === null ? '<span class="g-rodape">sem período anterior para comparar</span>' :
+    '<span class="g-rodape ' + ((v > 0) === bomSeSobe ? 'positivo' : (v === 0 ? '' : 'g-alerta')) + '"><b>' + (v > 0 ? '+' : (v < 0 ? '−' : '')) + Math.abs(v) + '%</b> vs. período anterior</span>';
+  h += '<div class="g-grade-4">' +
+    '<div class="g-tile"><span class="g-tile-nome">Renda média por mês</span><span class="g-tile-valor">' + brl(k.renda_media) + '</span>' + varTxt(k.renda_var, true) + '</div>' +
+    '<div class="g-tile"><span class="g-tile-nome">Gasto médio por mês</span><span class="g-tile-valor">' + brl(k.gasto_medio) + '</span>' + varTxt(k.gasto_var, false) + '</div>' +
+    '<div class="g-tile"><span class="g-tile-nome">Guardado no período</span><span class="g-tile-valor">' + brl(k.guardado) + '</span><span class="g-rodape">' +
+      (k.guardado_pct === null ? 'sem receitas' : k.guardado_pct + '% da renda · meta ' + k.meta_poupanca + '%') + '</span></div>' +
+    '<div class="g-tile"><span class="g-tile-nome">Meses no positivo</span><span class="g-tile-valor">' + k.meses_positivos + ' de ' + k.meses_total + '</span><span class="g-rodape">' +
+      (k.negativos.length ? 'no negativo: ' + esc(k.negativos.join(', ')) : 'nenhum mês no negativo') + '</span></div></div>';
+
+  // Entrou e saiu por mês
+  const max = Math.max.apply(null, d.serie.map(s => Math.max(s.receitas, s.despesas)).concat([1]));
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Entrou, saiu e sobrou por mês</h2>' +
+    '<span class="g-legenda"><span><i style="background:#8CC5B5"></i>entrou</span><span><i style="background:var(--tinta)"></i>saiu</span><span>% = quanto sobrou da renda</span></span></div>' +
+    '<div class="g-colunas" style="--n:' + d.serie.length + '" role="img" aria-label="' + esc(d.serie.map(s => s.rotulo + ': entrou ' + numBR(s.receitas, 0) + ', saiu ' + numBR(s.despesas, 0)).join('; ')) + '">' +
+    d.serie.map(s => '<div class="g-coluna"><span class="g-pct ' + (s.sobra_pct === null ? '' : (s.sobra_pct < 0 ? 'g-alerta' : 'positivo')) + '">' +
+      (s.sobra_pct === null ? '' : (s.sobra_pct > 0 ? '+' : (s.sobra_pct < 0 ? '−' : '')) + Math.abs(s.sobra_pct) + '%') + '</span>' +
+      '<div class="g-par"><span style="height:' + (s.receitas / max * 170).toFixed(0) + 'px;background:#8CC5B5"></span><span style="height:' + (s.despesas / max * 170).toFixed(0) + 'px;background:var(--tinta)"></span></div>' +
+      '<span class="g-barra-rot">' + esc(s.rotulo) + '</span></div>').join('') + '</div></section>';
+
+  // Categorias mês a mês + o que chamou atenção
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Categorias mês a mês</h2><span class="g-suave">cor mais forte = acima da média da categoria</span></div>';
+  if (!d.matriz.length) h += '<p class="g-vazio">Sem despesas no período.</p>';
+  else h += '<div class="g-rolar"><table class="g-tabela g-mapa"><thead><tr><th>Categoria</th>' + d.meses.map(m => '<th class="num">' + esc(m) + '</th>').join('') + '<th class="num">Média</th></tr></thead><tbody>' +
+    d.matriz.map(c => '<tr><td><b>' + esc(c.nome) + '</b></td>' + c.valores.map(v => {
+      const r = c.media > 0 ? v / c.media : 0;
+      const cls = v === 0 ? 'zero' : (r >= 1.25 ? 'alto2' : (r >= 1.1 ? 'alto' : (r <= 0.8 ? 'baixo' : '')));
+      return '<td class="num"><span class="g-celula ' + cls + '">' + (v === 0 ? '—' : numBR(v / 1000, 1) + 'k') + '</span></td>';
+    }).join('') + '<td class="num g-suave">' + numBR(c.media, 0) + '</td></tr>').join('') + '</tbody></table></div>';
+  h += '</section><div class="g-grade-2"><section class="g-cartao"><h2>O que chamou atenção</h2>' + d.insights.map(i =>
+    '<div class="g-insight"><span class="g-ponto ' + i.tom + '" aria-hidden="true"></span><span>' + esc(i.texto) + '</span></div>').join('');
+  h += '</section><section class="g-cartao"><h2>Gasto médio por pessoa</h2>';
+  if (!d.pessoas.length) h += '<p class="g-vazio">Sem despesas no período.</p>';
+  else {
+    h += d.pessoas.map(p =>
+      '<div class="g-entre" style="font-size:14px"><span class="' + (p.sem_nome ? 'g-suave' : '') + '">' + esc(p.sem_nome ? 'Sem nome (fixas, antigos)' : p.nome) + '</span><b>' + brl(p.media) + '/mês</b></div>').join('');
+  }
+  h += (S.boot.url_planilha ? '<a class="btn btn-secundario btn-pequeno" style="margin-top:8px" href="' + esc(S.boot.url_planilha) + '" target="_blank" rel="noopener">Abrir a planilha</a>' : '') + '</section></div>';
+  return h;
+}
+
+/* ============================================================================
+ * Planejamento
+ * ========================================================================== */
+
+function telaPlanejamentoG() {
+  let h = cabecalhoGrande('Planejamento', null, '', '<span class="topo-mini">próximos meses, gastos anuais, metas e orçamentos</span>');
+  const d = S.planDados;
+  if (S.erro_planejamento && !d) return h + falhaTela(S.erro_planejamento);
+  if (!d) return h + esqueleto([280, 320, 260]);
+
+  // Próximos 6 meses
+  const linha = (rot, campo, sinalNeg, cls) => '<tr class="' + (cls || '') + '"><td>' + rot + '</td>' + d.proximos.map(p => {
+    const v = p[campo];
+    return '<td class="num">' + (v === 0 ? '<span class="g-suave">0</span>' : (sinalNeg ? '−' : '') + numBR(v, 0)) + '</td>';
+  }).join('') + '</tr>';
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Próximos 6 meses</h2><span class="g-suave">renda esperada menos o que já está comprometido</span></div>' +
+    '<div class="g-rolar"><table class="g-tabela g-plano"><thead><tr><th></th>' + d.proximos.map(p => '<th class="num">' + esc(p.rotulo) + '</th>').join('') + '</tr></thead><tbody>' +
+    linha('Renda esperada', 'renda', false) +
+    linha('Contas fixas' + (d.tem_fixas ? '' : ' <button type="button" class="link-btn g-mini" data-acao="config-ind">marcar fixas</button>'), 'fixas', true) +
+    linha('Parcelas', 'parcelas', true) +
+    linha('Gastos anuais do mês', 'anuais', true) +
+    linha('Variáveis (média)', 'variaveis', true) +
+    '<tr class="g-sobra"><td><b>Sobra prevista</b></td>' + d.proximos.map(p => '<td class="num"><b class="' + (p.sobra < 0 ? 'g-alerta' : 'positivo') + '">' +
+      (p.sobra < 0 ? '−' : '+') + numBR(p.sobra, 0) + '</b></td>').join('') + '</tr></tbody></table></div>' +
+    (d.alerta ? '<p class="g-aviso-plano">' + esc(d.alerta) + '</p>' : '') +
+    '<p class="nota" style="margin:0">Estimativa: renda e variáveis pela média dos últimos ' + (d.base_meses || 3) + ' meses; fixas e parcelas pelo que já está lançado (o maior dos dois).</p></section>';
+
+  // Provisões + metas
+  h += '<div class="g-grade-14-1"><section class="g-cartao"><div class="g-entre"><h2>Gastos anuais (provisão)</h2><button type="button" class="btn btn-secundario btn-pequeno" data-novo-obj="provisao">Adicionar</button></div>' +
+    '<p class="g-rodape" style="margin:0">Despesas que vêm uma vez por ano. Guardando um pouco todo mês numa conta separada, o mês do vencimento não fica no negativo.</p>';
+  if (!d.provisoes.length) h += '<p class="g-vazio">Nenhum gasto anual cadastrado. Sugestões: IPVA, IPTU, matrícula e material escolar, seguro do carro, presentes de fim de ano.</p>';
+  else {
+    h += '<table class="g-tabela"><thead><tr><th>Gasto</th><th>Vence</th><th class="num">Valor</th><th class="num">Guardar por mês</th><th>Guardado</th></tr></thead><tbody>' +
+      d.provisoes.map(p => {
+        const pct = p.valor > 0 ? Math.min(100, p.guardado / p.valor * 100) : 0;
+        return '<tr data-obj="' + esc(p.id) + '" data-tipo="provisao" tabindex="0"><td><b>' + esc(p.nome) + '</b>' + (p.conta_nome ? '<br><span class="g-suave g-pequeno">' + esc(p.conta_nome) + (p.compartilhada ? ' (dividida)' : '') + '</span>' : '<br><span class="g-alerta g-pequeno">sem conta</span>') + '</td>' +
+          '<td>' + esc(MESES_CURTOS[p.mes_vencimento - 1]) + ' <span class="g-suave g-pequeno">(' + p.meses + (p.meses === 1 ? ' mês' : ' meses') + ')</span></td>' +
+          '<td class="num">' + numBR(p.valor, 0) + '</td><td class="num"><b>' + (p.por_mes > 0 ? numBR(p.por_mes, 0) : '✓') + '</b></td>' +
+          '<td style="min-width:140px"><span class="g-suave g-pequeno">' + brl(p.guardado) + ' de ' + numBR(p.valor, 0) + '</span><div class="barra-trilho"><div class="barra-cheia" style="width:' + pct.toFixed(0) + '%"></div></div></td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td colspan="3"><b>Guardar por mês, somando tudo</b></td><td class="num"><b>' + brl(d.provisao_por_mes) + '</b></td><td></td></tr></tfoot></table>';
+  }
+  h += '</section><section class="g-cartao"><div class="g-entre"><h2>Metas</h2><button type="button" class="btn btn-secundario btn-pequeno" data-novo-obj="meta">Nova meta</button></div>';
+  if (!d.metas.length) h += '<p class="g-vazio">Nenhuma meta ainda. Uma boa primeira: reserva de emergência de 6 meses do custo fixo.</p>';
+  else h += d.metas.map(m => {
+    const pct = m.meta > 0 ? Math.min(100, m.atual / m.meta * 100) : 0;
+    return '<button type="button" class="g-meta-btn" data-obj="' + esc(m.id) + '" data-tipo="meta"><span class="g-entre"><b>' + esc(m.nome) + '</b><span class="g-suave">' +
+      (m.data_alvo ? 'até ' + esc(dataCurtaMes(m.data_alvo)) : 'sem prazo') + '</span></span>' +
+      '<span class="barra-trilho"><span class="barra-cheia" style="display:block;width:' + pct.toFixed(0) + '%"></span></span>' +
+      '<span class="g-entre g-pequeno"><span class="g-suave">' + brl(m.atual) + ' de ' + brl(m.meta) + (m.conta_nome ? ' · ' + esc(m.conta_nome) : '') + '</span>' +
+      '<b>' + (m.restante <= 0 ? 'atingida' : (m.por_mes > 0 ? brl(m.por_mes) + '/mês' : (m.data_alvo ? 'prazo passou' : ''))) + '</b></span></button>';
+  }).join('');
+  h += '</section></div>';
+
+  // Orçamentos
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Limites de gasto por mês</h2><span class="g-suave">sugestão = média dos últimos 3 meses, arredondada</span></div>';
+  if (!d.orcamentos.length && !d.sem_orcamento.length) h += '<p class="g-vazio">Sem categorias de despesa.</p>';
+  else {
+    h += '<table class="g-tabela"><thead><tr><th>Categoria</th><th class="num">Gasto este mês</th><th class="num">Média 3 meses</th><th class="num">Sugestão</th><th class="num">Limite</th></tr></thead><tbody>' +
+      d.orcamentos.map(o => '<tr class="g-sem-clique"><td><b>' + esc(o.nome) + '</b></td><td class="num">' + numBR(o.gasto, 0) + '</td><td class="num g-suave">' + numBR(o.media, 0) + '</td>' +
+        '<td class="num">' + (o.sugestao ? '<button type="button" class="link-btn g-mini" data-usar-sug="' + esc(o.id) + '" data-sug="' + o.sugestao + '">' + numBR(o.sugestao, 0) + '</button>' : '<span class="g-suave">—</span>') + '</td>' +
+        '<td class="num"><label class="sr" for="lim-' + esc(o.id) + '">Limite de ' + esc(o.nome) + '</label><input class="g-input-num" id="lim-' + esc(o.id) + '" data-orc="' + esc(o.id) + '" inputmode="decimal" value="' + numBR(o.limite, 0) + '"></td></tr>').join('') +
+      '</tbody></table>' +
+      (d.sem_orcamento.length ? '<div class="g-novo-orc"><label for="novo-orc-cat" class="g-suave">Adicionar limite para</label><select id="novo-orc-cat" class="g-select"><option value="">escolha a categoria…</option>' +
+        d.sem_orcamento.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>').join('') + '</select>' +
+        '<label for="novo-orc-valor" class="sr">Valor</label><input id="novo-orc-valor" class="g-input-num" inputmode="decimal" placeholder="valor"></div>' : '') +
+      '<div class="g-entre" style="margin-top:6px"><span class="g-rodape">O limite vale para todos os meses em que o orçamento está ativo.</span><button type="button" class="btn btn-primario btn-pequeno" data-acao="salvar-orc">Salvar limites</button></div>';
+  }
+  h += '</section>';
+  return h;
+}
+
+function abrirObjetivo(tipo, id) {
+  const d = S.planDados;
+  const lista = tipo === 'provisao' ? d.provisoes : d.metas;
+  const o = id ? lista.find(x => x.id === id) : null;
+  const titulo = (o ? 'Editar ' : 'Novo ') + (tipo === 'provisao' ? 'gasto anual' : 'meta');
+  const valor = o ? (tipo === 'provisao' ? o.valor : o.meta) : '';
+  const contaSel = o ? o.conta : '';
+  let campos = '<div class="campo"><label for="ob-nome">Nome</label><input id="ob-nome" maxlength="60" value="' + esc(o ? o.nome : '') + '" placeholder="' + (tipo === 'provisao' ? 'IPVA' : 'Viagem de julho') + '"></div>' +
+    '<div class="campo"><label for="ob-valor">' + (tipo === 'provisao' ? 'Valor por ano' : 'Valor da meta') + '</label><input id="ob-valor" inputmode="decimal" value="' + (valor ? numBR(valor) : '') + '"></div>';
+  if (tipo === 'provisao') {
+    campos += '<div class="campo"><label for="ob-mes">Vence em</label><select id="ob-mes">' + MESES.map((m, i) =>
+      '<option value="' + (i + 1) + '"' + (o && o.mes_vencimento === i + 1 ? ' selected' : '') + '>' + esc(maiuscula(m)) + '</option>').join('') + '</select></div>';
+  } else {
+    campos += '<div class="campo"><label for="ob-data">Até quando</label><input id="ob-data" type="date" value="' + esc(o ? o.data_alvo : '') + '"></div>';
+  }
+  campos += '<div class="campo"><label for="ob-conta">Guardado em</label><select id="ob-conta"><option value="">escolha a conta…</option>' + d.contas.map(c =>
+    '<option value="' + esc(c.id) + '"' + (c.id === contaSel ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</select></div>';
+  const h = topoFolha(titulo) + '<div class="campos">' + campos + '</div>' +
+    '<p class="obs">O quanto já foi guardado é o saldo dessa conta' + (tipo === 'provisao' ? ' (se vários gastos anuais usam a mesma conta, ela é dividida na proporção dos valores).' : '.') + '</p>' +
+    '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="salvar-obj">Salvar</button>' +
+    (o ? '<button type="button" class="btn btn-perigo" data-acao="excluir-obj">Excluir</button>' : '') + '</div>';
+  abrirFolha(h, function (folha) {
+    const b = folha.querySelector('[data-acao="salvar-obj"]');
+    b.onclick = function () {
+      const dados = {
+        id: o ? o.id : '', tipo: tipo, nome: folha.querySelector('#ob-nome').value,
+        valor: textoParaNumero(folha.querySelector('#ob-valor').value), conta: folha.querySelector('#ob-conta').value
+      };
+      if (tipo === 'provisao') dados.mes_vencimento = Number(folha.querySelector('#ob-mes').value);
+      else dados.data_alvo = folha.querySelector('#ob-data').value;
+      b.disabled = true;
+      run('appSalvarObjetivo', dados).then(function () { fecharFolha(); aviso('Salvo.'); invalidar(); })
+        .catch(function (e) { b.disabled = false; erro(e); });
+    };
+    const ex = folha.querySelector('[data-acao="excluir-obj"]');
+    if (ex) {
+      let armado = false;
+      ex.onclick = function () {
+        if (!armado) { armado = true; ex.textContent = 'Toque de novo para excluir'; return; }
+        ex.disabled = true;
+        run('appExcluirObjetivo', o.id).then(function () { fecharFolha(); aviso('Excluído.'); invalidar(); })
+          .catch(function (e) { ex.disabled = false; erro(e); });
+      };
+    }
+  });
+}
+
+/* ============================================================================
+ * Eventos
+ * ========================================================================== */
+
+function ligarTelaG2(tela) {
+  // Cartões
+  tela.querySelectorAll('[data-cartao]').forEach(b => {
+    b.onclick = function () { S.cart = { id: b.dataset.cartao, ano: 0, mes: 0 }; S.cartDados = null; desenhar(); carregarAba(true); };
+  });
+  tela.querySelectorAll('[data-fatura]').forEach(b => {
+    b.onclick = function () {
+      const f = S.cartDados.fatura;
+      const m = mudarMes({ ano: f.ano, mes: f.mes }, Number(b.dataset.fatura));
+      S.cart = { id: S.cartDados.cartao.id, ano: m.ano, mes: m.mes }; carregarAba(true);
+    };
+  });
+  tela.querySelectorAll('[data-ir-fatura]').forEach(b => {
+    b.onclick = function () {
+      const p = b.dataset.irFatura.split('-');
+      S.cart = { id: S.cartDados.cartao.id, ano: Number(p[0]), mes: Number(p[1]) }; carregarAba(true);
+    };
+  });
+  const pg = tela.querySelector('[data-acao="pagar-fatura"]');
+  if (pg) pg.onclick = abrirPagarFatura;
+  tela.querySelectorAll('[data-mover]').forEach(b => {
+    b.onclick = function (e) {
+      e.stopPropagation();
+      b.disabled = true;
+      run('appMoverFatura', b.dataset.id, Number(b.dataset.mover)).then(function (r) {
+        const p = String(r.competencia || '').split('-');
+        aviso('Movida para a fatura de ' + (p.length === 2 ? MESES[Number(p[1]) - 1] : 'outro mês') + '.');
+        invalidar();
+      }).catch(function (x) { b.disabled = false; erro(x); });
+    };
+  });
+  tela.querySelectorAll('tr[data-compra]').forEach(tr => {
+    const abrir = function () { const it = S.cartDados.fatura.compras.find(l => l.id === tr.dataset.compra); if (it) abrirEdicao(it); };
+    tr.onclick = abrir;
+    tr.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+
+  // Relatórios
+  tela.querySelectorAll('[data-periodo]').forEach(b => {
+    b.onclick = function () { const anos = S.relDados ? S.relDados.anos : []; S.relPeriodo = b.dataset.periodo; S.relDados = null; S.relAnos = anos; desenhar(); carregarAba(true); };
+  });
+
+  // Planejamento
+  tela.querySelectorAll('[data-novo-obj]').forEach(b => { b.onclick = function () { abrirObjetivo(b.dataset.novoObj, ''); }; });
+  tela.querySelectorAll('[data-obj]').forEach(el => {
+    const abrir = function () { abrirObjetivo(el.dataset.tipo, el.dataset.obj); };
+    el.onclick = abrir;
+    if (el.tagName === 'TR') el.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+  tela.querySelectorAll('[data-usar-sug]').forEach(b => {
+    b.onclick = function () { const i = tela.querySelector('#lim-' + b.dataset.usarSug); if (i) { i.value = numBR(Number(b.dataset.sug), 0); i.focus(); } };
+  });
+  const so = tela.querySelector('[data-acao="salvar-orc"]');
+  if (so) so.onclick = function () {
+    const lista = Array.prototype.map.call(tela.querySelectorAll('[data-orc]'), i => ({ id: i.dataset.orc, valor: textoParaNumero(i.value) }));
+    const cat = tela.querySelector('#novo-orc-cat');
+    if (cat && cat.value) {
+      const v = textoParaNumero(tela.querySelector('#novo-orc-valor').value);
+      if (!(v > 0)) { aviso('Informe o valor do novo limite.', { erro: true }); return; }
+      lista.push({ referencia: cat.value, valor: v });
+    }
+    so.disabled = true;
+    run('appSalvarOrcamentos', lista).then(function (r) { aviso(r.alterados ? r.alterados + ' limite(s) salvo(s).' : 'Nada mudou.'); invalidar(); })
+      .catch(function (e) { so.disabled = false; erro(e); });
+  };
+}
+</script>

@@ -507,4 +507,103 @@ body.grande .aviso { left: auto; right: 24px; transform: none; bottom: 24px; wid
   .g-rapido { width: 100%; order: 10; }
   .lat-classico { display: none; }
 }
+
+/* ===== Tela grande — etapa 2 ===== */
+a.btn { text-decoration: none; }
+.g-abas-cartao { display: flex; gap: 6px; flex-wrap: wrap; }
+.g-grade-cartao { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.g-grade-1-14 { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(0, 1.5fr); gap: 14px; align-items: start; }
+.g-grade-14-1 { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
+.g-nav-fatura { display: flex; gap: 4px; }
+.g-nav-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: transparent; color: inherit; display: flex; align-items: center; justify-content: center; }
+.g-nav-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.g-total-fatura { font-size: 32px; font-weight: 800; letter-spacing: -.5px; }
+.g-botoes-linha { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; align-items: center; }
+.btn-claro { background: var(--destaque-entrou); color: #0B2E26; }
+.btn-contorno { background: transparent; color: inherit; border: 1px solid rgba(255,255,255,.28); text-decoration: none; }
+.g-numero { font-size: 24px; font-weight: 800; }
+.g-barra-dupla { display: flex; height: 10px; background: var(--linha-2); border-radius: 5px; overflow: hidden; }
+.g-h3 { font-size: 15px; font-weight: 800; margin: 10px 0 0; }
+.g-pad-topo { padding: 16px 20px 6px; }
+.g-col-pad { padding-left: 20px !important; }
+.g-col-acoes { width: 76px; white-space: nowrap; text-align: right; }
+.g-col-acoes .g-x { display: inline-flex; margin: 0; }
+.g-barras { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; min-height: 190px; border-bottom: 1px solid var(--linha); }
+.g-barra-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; border: none; background: none; padding: 0 0 4px; border-radius: 10px; height: 100%; }
+.g-barra-col:hover { background: var(--linha-2); }
+.g-barra { width: 70%; max-width: 44px; border-radius: 6px 6px 2px 2px; display: block; }
+.g-barra.passada { background: #C9D6D1; }
+.g-barra.central { background: var(--verde); }
+.g-barra.futura { background: #8CC5B5; }
+.g-barra-val { font-size: 11px; font-weight: 700; color: var(--suave); }
+.g-barra-rot { font-size: 12px; color: var(--suave); font-weight: 600; }
+.g-seg { margin: 0; min-width: 300px; }
+.g-seg button { padding: 0 12px; height: 34px; }
+.g-legenda { display: flex; gap: 14px; font-size: 13px; color: var(--suave); flex-wrap: wrap; }
+.g-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.g-colunas { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 6px; align-items: end; border-bottom: 1px solid var(--linha); padding-top: 8px; }
+.g-coluna { display: flex; flex-direction: column; align-items: center; gap: 6px; justify-content: flex-end; }
+.g-pct { font-size: 11px; font-weight: 800; min-height: 14px; }
+.g-par { display: flex; gap: 3px; align-items: flex-end; height: 172px; }
+.g-par span { width: 14px; border-radius: 4px 4px 0 0; display: block; }
+.g-colunas + * { margin-top: 0; }
+.g-rolar { overflow-x: auto; }
+.g-mapa td, .g-mapa th { padding: 6px 4px; }
+.g-celula { display: inline-block; min-width: 46px; text-align: center; border-radius: 6px; padding: 4px 4px; font-size: 12px; font-weight: 600; background: var(--linha-2); }
+.g-celula.alto { background: var(--cobre-claro); }
+.g-celula.alto2 { background: #F3C7AC; color: #6E2E0D; }
+.g-celula.baixo { background: var(--verde-claro); }
+.g-celula.zero { background: transparent; color: var(--fraco); }
+@media (prefers-color-scheme: dark) { .g-celula.alto2 { background: #6E3417; color: #FFE1CF; } }
+.g-insight { display: flex; gap: 10px; font-size: 14px; line-height: 1.45; }
+.g-insight .g-ponto { margin-top: 5px; }
+.g-ponto.alerta { background: var(--cobre); }
+.g-ponto.bom { background: var(--entrada); }
+.g-ponto.neutro { background: var(--fraco); }
+.g-plano td:first-child { white-space: nowrap; color: var(--suave); }
+.g-plano tbody tr { cursor: default; }
+.g-plano tbody tr:hover td { background: none; }
+.g-sobra td { border-top: 1px solid var(--linha); }
+.g-sobra td:first-child { color: var(--tinta); }
+.g-mini { font-size: 12px; padding: 4px; margin: 0 0 0 4px; }
+.g-aviso-plano { margin: 0; background: var(--cobre-claro); color: var(--cobre); border-radius: 12px; padding: 10px 14px; font-size: 14px; font-weight: 700; }
+.g-meta-btn { display: flex; flex-direction: column; gap: 6px; border: none; background: none; text-align: left; padding: 10px 0; border-bottom: 1px solid var(--linha-2); width: 100%; font-size: 14px; }
+.g-meta-btn:last-child { border-bottom: none; }
+.g-meta-btn:hover b:first-child { text-decoration: underline; }
+.g-sem-clique { cursor: default !important; }
+.g-tabela tbody tr.g-sem-clique:hover td { background: none; }
+.g-input-num { width: 110px; height: 36px; border: 1px solid var(--linha); border-radius: 10px; padding: 0 10px; text-align: right; font-weight: 700; background: var(--fundo); }
+.g-input-num:focus { border-color: var(--verde); outline: none; }
+.g-novo-orc { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; padding-top: 6px; }
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .g-grade-cartao { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g-grade-cartao > :first-child { grid-column: 1 / -1; }
+  .g-grade-1-14, .g-grade-14-1 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ===== Tela grande — etapa 3 ===== */
+.g-seg-cfg { min-width: 0; width: 100%; }
+.g-seg-cfg button { font-size: 13px; padding: 0 6px; }
+.g-inativo td { opacity: .55; }
+.g-check-form { border: none; padding: 10px 0; align-items: flex-start; }
+.g-check-form input { margin-top: 2px; }
+.g-check-form small { display: block; font-weight: 500; color: var(--suave); font-size: 12px; margin-top: 2px; }
+.campos .g-check-form { padding: 10px 14px; border-bottom: 1px solid var(--linha-2); }
+.g-cat-grupo { display: flex; flex-direction: column; border: 1px solid var(--linha-2); border-radius: 12px; margin: 0 0 8px; overflow: hidden; }
+.g-cat-btn { display: flex; align-items: center; gap: 8px; justify-content: space-between; border: none; background: none; text-align: left; padding: 8px 12px 8px 26px; font-size: 14px; border-top: 1px solid var(--linha-2); }
+.g-cat-btn:hover { background: var(--linha-2); }
+.g-cat-pai { padding-left: 12px; border-top: none; background: var(--fundo); }
+.g-cat-pai b { margin-right: auto; }
+.g-manut { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--linha-2); }
+.g-manut:last-child { border-bottom: none; }
+.g-manut > div { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.g-grupo-pat { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--linha-2); font-size: 14px; }
+.g-grupo-pat:last-child { border-bottom: none; }
+.g-imp-passos { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) auto; gap: 16px; align-items: end; }
+.g-imp-passo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--suave); position: relative; padding-left: 34px; }
+.g-num-passo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--verde); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.g-select-largo { max-width: none; width: 100%; height: 42px; border-radius: 12px; }
+.g-imp-passo input[type="file"] { font-size: 13px; }
+.g-dup td { background: var(--cobre-claro); }
+.g-dup td:first-child { box-shadow: inset 3px 0 0 var(--cobre); }
 </style>

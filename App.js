@@ -166,9 +166,10 @@ function appFaturasAPagar_(de, ate) {
       const venc = f.ciclo && f.ciclo.vencimento;
       if (!venc || venc < de || venc > ate) return;
       if (f.status === 'paga' || Math.abs(f.total) < 0.01 || f.total > 0) return;
+      const falta = f.status === 'parcial' ? -Number(f.restante) : f.total;
       itens.push({
-        id: '', fatura: true, cartao: String(c.id), data: venc,
-        descricao: 'Fatura ' + c.nome, valor: appArred_(f.total), status: f.status
+        id: '', fatura: true, cartao: String(c.id), data: venc, ano: m.ano, mes: m.mes,
+        descricao: 'Fatura ' + c.nome + (f.status === 'parcial' ? ' (restante)' : ''), valor: appArred_(falta), status: f.status
       });
     });
   });

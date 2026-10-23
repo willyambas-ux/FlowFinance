@@ -24,19 +24,25 @@ function deleteProjeto(id) {
 
 function normalizeProjeto_(data) {
   data = data || {};
-  return {
+  const out = {
     nome: String(data.nome || '').trim(),
     valor_meta: Utils.toNumber(data.valor_meta),
     data_alvo: data.data_alvo || '',
     conta_vinculada: data.conta_vinculada || ''
   };
+  // Só entram quando vêm preenchidos: a edição pelo app clássico não apaga o tipo
+  if (data.tipo) out.tipo = data.tipo === 'provisao' ? 'provisao' : 'meta';
+  if (data.mes_vencimento !== undefined && data.mes_vencimento !== '') {
+    out.mes_vencimento = Math.max(1, Math.min(12, Math.floor(Number(data.mes_vencimento)) || 1));
+  }
+  return out;
 }
 
 /**
  * Lista projetos com valor_meta > 0 e calcula progresso.
  */
 function getMetasEconomia() {
-  const projetos = listProjetos().filter(p => Number(p.valor_meta) > 0);
+  const projetos = listProjetos().filter(p => Number(p.valor_meta) > 0 && p.tipo !== 'provisao');
   if (projetos.length === 0) return [];
 
   const saldos = getSaldosContas();

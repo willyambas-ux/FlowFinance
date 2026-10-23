@@ -178,6 +178,7 @@ function desenhar() {
   if (S.aba === 'mes') tela.innerHTML = telaMesG();
   else if (S.aba === 'revisar') tela.innerHTML = telaRevisarG();
   else if (S.aba === 'movimentos') tela.innerHTML = telaMovG();
+  else if (['cartoes', 'relatorios', 'planejamento', 'patrimonio', 'importar', 'fechamento', 'config'].indexOf(S.aba) !== -1) tela.innerHTML = telaG2(S.aba);
   else if (S.aba === 'inicio') tela.innerHTML = telaInicio();
   else if (S.aba === 'lancamentos') tela.innerHTML = telaLancamentos();
   else if (S.aba === 'painel') tela.innerHTML = telaPainel();
@@ -218,6 +219,7 @@ function carregarAba(forcar) {
       p = run('appPainel', m.ano, m.mes).then(d => { if (S.painelMes === m) S.painel = d; });
     }
   }
+  if (!p && typeof carregarAbaG2 === 'function') p = carregarAbaG2(aba, forcar, velho);
   if (!p) return Promise.resolve();
   marcarCarregando(true);
   return p.then(function () {
@@ -628,7 +630,7 @@ function telaMais() {
     (b.ia_configurada ? '' :
       '<div style="padding:14px 16px;font-size:14px;color:var(--cobre)"><b>Lançamento por frase desligado.</b> Crie a propriedade ANTHROPIC_API_KEY no projeto FlowFinance (a mesma chave do bot).</div>') +
     '</div>';
-  h += '<div class="secao"><h2>App clássico</h2></div><div class="bloco menu">' + TELAS_CLASSICO.map(t =>
+  h += '<div class="secao"><h2>Mais telas</h2></div><p class="nota" style="margin:-4px 20px 10px">No computador ou tablet, tudo isso abre no app novo. Aqui no celular, abre a versão antiga.</p><div class="bloco menu">' + TELAS_CLASSICO.map(t =>
     '<a href="' + esc(urlClassico(t[0])) + '" target="_top"><svg viewBox="0 0 24 24" aria-hidden="true">' + t[3] + '</svg>' +
     '<span>' + esc(t[1]) + (t[2] ? '<small>' + esc(t[2]) + '</small>' : '') + '</span>' + ICONE.seta + '</a>').join('') + '</div>';
   h += '<div class="secao"><h2>Planilha e sessão</h2></div><div class="bloco menu">' +
