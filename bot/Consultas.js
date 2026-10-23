@@ -214,7 +214,31 @@ const Consultas = (function () {
     return L.join('\n');
   }
 
-  const TIPOS = { gastos: gastos, saldo: saldo, vencimentos: vencimentos, fatura: fatura, resumo: resumo, orcamentos: orcamentos };
+  /** Histórico de preços de um produto ou categoria de produto (aba Itens). */
+  function precos(ctx, q) {
+    const termo = String(q.termo || '').trim();
+    if (!termo) return 'Qual produto? Ex.: <i>/preco arroz</i> ou "onde o café está mais barato?"';
+    const r = FF.pesquisarPrecos(termo, { desde: Formato.hoje(-365), limite: 5 });
+    if (!r.total) {
+      return 'Ainda não tenho compras de <b>' + Telegram.esc(termo) + '</b> no histórico.\nCada foto de cupom com itens alimenta essa busca.';
+    }
+    const L = ['<b>Preços de ' + Telegram.esc(termo) + '</b> · ' + r.total + (r.total === 1 ? ' compra' : ' compras') + ' em 12 meses', ''];
+    r.lojas.slice(0, 6).forEach((g, i) => {
+      L.push((i === 0 && r.lojas.length > 1 ? '🏷 ' : '• ') + '<b>' + Telegram.esc(g.loja) + '</b>: ' +
+        (g.vezes > 1 ? 'média ' + Formato.brl(g.media) + ', menor ' + Formato.brl(g.menor) : Formato.brl(g.ultimo)) +
+        ' · última em ' + Formato.dataBR(g.ultima_data));
+    });
+    L.push('', '<i>Últimas compras:</i>');
+    r.itens.forEach(i => {
+      const q2 = Number(i.quantidade);
+      L.push(Formato.dataBR(String(i.data).slice(0, 10)) + ' · ' + Telegram.esc(i.produto) +
+        (i.marca ? ' (' + Telegram.esc(i.marca) + ')' : '') + ' · ' + Formato.brl(Number(i.valor_unitario)) + '/' + Telegram.esc(i.unidade || 'un') +
+        (q2 && q2 !== 1 ? ' ×' + q2 : '') + ' · ' + Telegram.esc(i.loja));
+    });
+    return L.join('\n');
+  }
+
+  const TIPOS = { precos: precos, gastos: gastos, saldo: saldo, vencimentos: vencimentos, fatura: fatura, resumo: resumo, orcamentos: orcamentos };
 
   function responder(q, ctx) {
     ctx = ctx || Contexto.carregar();

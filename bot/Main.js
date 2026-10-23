@@ -137,6 +137,7 @@ function tratarMensagem_(msg) {
       '<i>o que vence esta semana?</i>',
       '',
       '/resumo o mês até agora · /saldos das contas · /contas a pagar em 7 dias · /faturas dos cartões · /orcamentos',
+      '/preco arroz mostra onde você pagou menos (vem dos itens dos cupons).',
       '/desfazer apaga o seu último lançamento.'
     ].join('\n'));
     return;
@@ -147,6 +148,12 @@ function tratarMensagem_(msg) {
     const r = chave ? Rascunho.ler(chave) : null;
     if (r && Rascunho.desfazer(r)) Telegram.enviar(chatId, 'Pronto, desfeito.');
     else Telegram.enviar(chatId, 'Não achei um lançamento recente seu para desfazer.');
+    return;
+  }
+
+  if (cmd === '/preco' || cmd === '/precos') {
+    Telegram.digitando(chatId);
+    responderConsulta_(chatId, { tipo: 'precos', termo: texto.split(/\s+/).slice(1).join(' ') });
     return;
   }
 

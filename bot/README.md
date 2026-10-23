@@ -37,6 +37,13 @@ Mande a foto (ou um PDF) do cupom fiscal, da NFC-e ou do comprovante de Pix/maqu
 - Se a foto chega primeiro, a notificação do mesmo valor depois só avisa que já está lançado.
 - A foto em si ainda não é guardada (precisaria de acesso ao Google Drive).
 
+### Histórico de preços
+
+Cada item do cupom vai para a aba **Itens** da planilha, ligado ao lançamento: produto com nome padronizado, marca, categoria do item (ex.: "Mercearia > Arroz"), quantidade, unidade, preço unitário já com o desconto rateado, loja, data e chave da NFC-e. Desfazer apaga os itens junto.
+
+- `/preco arroz` ou "onde o café está mais barato?": lojas do menor preço médio para o maior (12 meses) e as últimas compras.
+- A busca aceita produto, marca ou categoria do item (ex.: `/preco mercearia`).
+
 ## Notificações do Android (Fase 2)
 
 O MacroDroid captura a notificação de compra do banco e manda ao bot. A compra já entra na planilha com status **revisar** (aparece em "Para revisar" no app) e o rascunho aparece no Telegram de quem gastou: Confirmar atualiza esse mesmo lançamento, Cancelar apaga. Se você revisar pelo app primeiro, o Telegram avisa que já foi resolvido. Transferências entre suas contas continuam só no Telegram até você confirmar.

@@ -32,11 +32,16 @@ const Cupom = (function () {
           items: {
             type: 'object',
             properties: {
-              descricao: { type: 'string' },
+              descricao: { type: 'string', description: 'Texto do item como está no cupom.' },
+              produto: { type: 'string', description: 'Nome padronizado e legível, sem marca nem código, para comparar preços entre lojas (ex.: "Lápis grafite 4B", "Arroz branco tipo 1 5kg", "Leite integral 1L").' },
+              marca: { type: ['string', 'null'] },
+              categoria_item: { type: 'string', description: 'Grupo > subgrupo do produto, em português (ex.: "Papelaria > Lápis", "Mercearia > Arroz", "Bebidas > Café", "Hortifrúti > Frutas", "Limpeza > Detergente", "Farmácia > Analgésico").' },
               quantidade: { type: ['number', 'null'] },
-              valor: { type: ['number', 'null'], description: 'Valor total do item.' }
+              unidade: { type: ['string', 'null'], description: 'un, kg, g, l, ml ou pct, como no cupom.' },
+              valor_unitario: { type: ['number', 'null'] },
+              valor: { type: ['number', 'null'], description: 'Valor total do item (quantidade × unitário).' }
             },
-            required: ['descricao']
+            required: ['descricao', 'produto']
           }
         },
         desconto: { type: ['number', 'null'] },
@@ -66,6 +71,8 @@ const Cupom = (function () {
       '- conta_id/cartao_id: use SOMENTE ids das listas e só com indicação clara (legenda "xp", "itaú", nome do banco no comprovante). Na dúvida, null.',
       '- Os nomes seguem "NN tipo BANCO": cc = conta corrente, cred = cartão de crédito, vr = vale, ci = investimento.',
       '- Se não for comprovante (foto de outra coisa), e_comprovante = false.',
+      '- itens: leia todos os itens visíveis. Em produto, padronize o nome para comparar o mesmo produto entre lojas; use o mesmo padrão sempre.',
+      '- categoria_id: pense no que foi comprado (a maioria dos itens) e no tipo de loja. Ex.: lápis, caderno = material escolar ou papelaria; comida de supermercado = mercado. Mensalidade é só pagamento à escola. Se nenhuma categoria da lista servir bem, use null.',
       '',
       Interpretador.listas(ctx)
     ].join('\n');
@@ -117,6 +124,31 @@ const Cupom = (function () {
     if (num_(b.desconto)) L.push('desconto ' + Formato.brl(num_(b.desconto)));
     if (b.chave_acesso) L.push('chave NFC-e ' + String(b.chave_acesso).replace(/\D/g, ''));
     return L.join(' | ').slice(0, 900);
+  }
+
+  /** Itens no formato da aba Itens (histórico de preços). */
+  function itensParaGravar_(b) {
+    const itens = Array.isArray(b.itens) ? b.itens.slice(0, 40) : [];
+    const totalBruto = itens.reduce((s, i) => s + (num_(i.valor) || 0), 0);
+    const desconto = num_(b.desconto) || 0;
+    return itens.filter(i => String(i.produto || i.descricao || '').trim()).map(i => {
+      const total = num_(i.valor);
+      const qtd = num_(i.quantidade) > 0 ? num_(i.quantidade) : 1;
+      // Desconto do cupom rateado pelo valor de cada item: o preço que vale é o pago
+      const parte = desconto && totalBruto > 0 && total ? desconto * total / totalBruto : 0;
+      const pago = total ? Math.round((total - parte) * 100) / 100 : null;
+      return {
+        descricao_cupom: String(i.descricao || '').trim(),
+        produto: String(i.produto || i.descricao || '').trim(),
+        marca: String(i.marca || '').trim(),
+        categoria_item: String(i.categoria_item || '').trim(),
+        quantidade: qtd,
+        unidade: String(i.unidade || 'un').trim().toLowerCase(),
+        valor_unitario: pago ? Math.round(pago / qtd * 10000) / 10000 : num_(i.valor_unitario),
+        valor_total: pago,
+        desconto: Math.round(parte * 100) / 100
+      };
+    });
   }
 
   /** Linha curta dos itens para o Telegram. */
@@ -206,6 +238,13 @@ const Cupom = (function () {
       cabecalho: 'Cupom · ' + String(b.loja || b.razao_social || 'foto').trim() + (b.forma_pagamento ? ' · ' + rotuloPagamento_(b.forma_pagamento) : ''),
       itensResumo: resumoItens_(b),
       observacao: observacao_(b),
+      itens: itensParaGravar_(b),
+      cupomCab: {
+        loja: String(b.loja || b.razao_social || '').trim(),
+        cnpj: String(b.cnpj || ''),
+        chave_nfce: String(b.chave_acesso || '').replace(/\D/g, ''),
+        quem: quem
+      },
       textoOriginal: legenda
     };
 

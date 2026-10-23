@@ -97,6 +97,7 @@ function configurarComandos() {
       { command: 'contas', description: 'Contas a pagar nos próximos 7 dias' },
       { command: 'faturas', description: 'Faturas dos cartões' },
       { command: 'orcamentos', description: 'Situação dos orçamentos' },
+      { command: 'preco', description: 'Onde um produto saiu mais barato (ex.: /preco arroz)' },
       { command: 'desfazer', description: 'Apaga o seu último lançamento' },
       { command: 'ajuda', description: 'Exemplos do que posso fazer' }
     ]

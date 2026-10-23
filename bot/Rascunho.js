@@ -341,6 +341,7 @@ const Rascunho = (function () {
       }
       r.ids = criados.filter(Boolean).map(l => String(l.id));
     }
+    if (r.ids.length) gravarItens_(r, r.ids[0], r.data);
     const aprendido = aprender_(r, ctx);
     r.estado = 'salvo';
     salvar(r);
@@ -349,6 +350,7 @@ const Rascunho = (function () {
     const titulo = r.parcelas > 1 && !ehTransf_(r) ? 'Lançado em ' + r.parcelas + ' parcelas' : 'Lançado';
     let texto = textoResumo_(r, ctx, titulo);
     if (aprendido) texto += '\n\n<i>' + Telegram.esc(aprendido) + '</i>';
+    if (r.itensGravados) texto += '\n<i>' + r.itensGravados + (r.itensGravados === 1 ? ' item foi' : ' itens foram') + ' para o histórico de preços.</i>';
     Telegram.editar(r.chatId, r.messageId, texto, [[botao_('Desfazer', 'u|' + r.chave)]]);
     return true;
   }
@@ -372,6 +374,7 @@ const Rascunho = (function () {
     };
     if (revisar) novo.status = String(atual.data) > Formato.hoje() ? 'agendado' : 'confirmado';
     FF.saveLancamento(Object.assign({}, atual, novo, { id: atual.id }));
+    gravarItens_(r, atual.id, String(atual.data).slice(0, 10));
 
     // O rascunho da notificação, se ainda aberto no Telegram, fica resolvido
     const chaveNotif = cache_().get('lancrasc_' + atual.id);
@@ -396,13 +399,28 @@ const Rascunho = (function () {
     r.estado = 'salvo';
     salvar(r);
     cache_().put('ultimo_' + r.usuarioId, r.chave, TTL);
-    const texto = textoResumo_(r, ctx, 'Juntado ao lançamento que já existia');
+    let texto = textoResumo_(r, ctx, 'Juntado ao lançamento que já existia');
+    if (r.itensGravados) texto += '\n<i>' + r.itensGravados + (r.itensGravados === 1 ? ' item foi' : ' itens foram') + ' para o histórico de preços.</i>';
     Telegram.editar(r.chatId, r.messageId, texto, [[botao_('Desfazer', 'u|' + r.chave)]]);
     return 'Juntado';
   }
 
+  /** Itens do cupom vão para a aba Itens (histórico de preços), ligados ao lançamento. */
+  function gravarItens_(r, lancamentoId, data) {
+    if (!r.itens || !r.itens.length) return;
+    try {
+      const res = FF.salvarItensCupom(lancamentoId, Object.assign({ data: data }, r.cupomCab || {}), r.itens);
+      r.itensGravados = res && res.gravados || 0;
+    } catch (e) {
+      console.warn('não consegui gravar os itens: ' + e);
+    }
+  }
+
   function desfazer(r) {
     if (r.estado !== 'salvo' || !r.ids.length) return false;
+    if (r.itensGravados) {
+      try { FF.removerItensDoLancamento(r.ids); } catch (e) { console.warn('itens: ' + e); }
+    }
     if (r.antes) {
       // Juntado: volta o lançamento como estava, sem apagar
       FF.saveLancamento(Object.assign({}, r.antes, { id: r.antes.id }));

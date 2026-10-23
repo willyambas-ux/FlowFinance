@@ -22,14 +22,15 @@ const Interpretador = (function () {
           properties: {
             tipo: {
               type: 'string',
-              enum: ['gastos', 'saldo', 'vencimentos', 'fatura', 'resumo', 'orcamentos'],
-              description: 'gastos = quanto gastou (total ou numa categoria); saldo = saldo de contas; vencimentos = contas a pagar nos próximos dias; fatura = fatura de cartão; resumo = visão geral do mês; orcamentos = situação dos orçamentos.'
+              enum: ['gastos', 'saldo', 'vencimentos', 'fatura', 'resumo', 'orcamentos', 'precos'],
+              description: 'gastos = quanto gastou (total ou numa categoria); saldo = saldo de contas; vencimentos = contas a pagar nos próximos dias; fatura = fatura de cartão; resumo = visão geral do mês; orcamentos = situação dos orçamentos; precos = quanto custa/custou um produto e onde é mais barato.'
             },
             categoria_id: { type: ['string', 'null'], description: 'id de categoria da lista, quando a pergunta citar uma.' },
             conta_id: { type: ['string', 'null'] },
             cartao_id: { type: ['string', 'null'] },
             mes: { type: ['string', 'null'], description: 'YYYY-MM se a pergunta citar um mês; senão null (mês atual).' },
-            dias: { type: ['integer', 'null'], description: 'Janela em dias para vencimentos; null = 7.' }
+            dias: { type: ['integer', 'null'], description: 'Janela em dias para vencimentos; null = 7.' },
+            termo: { type: ['string', 'null'], description: 'Só em precos: o produto ou tipo de produto, curto e no singular (ex.: "arroz", "café", "lápis").' }
           },
           required: ['tipo']
         },
@@ -83,7 +84,7 @@ const Interpretador = (function () {
       '',
       'Regras:',
       '- valor: número positivo em reais. "32,50" = 32.5; "1.200" = 1200; "mil" = 1000. Se não houver valor, use null e inclua uma dúvida com campo "valor".',
-      '- tipo: "despesa" para gastos e pagamentos; "receita" para recebimentos (recebi, salário, entrou, pix recebido). Perguntas sobre as finanças ("quanto gastei", "qual o saldo", "o que vence", "como está a fatura", "resumo do mês", "orçamento") são "consulta": preencha o objeto consulta e não preencha valor, descricao nem duvidas. Se não for lançamento nem consulta, use "nao_e_lancamento" e responda em "resposta".',
+      '- tipo: "despesa" para gastos e pagamentos; "receita" para recebimentos (recebi, salário, entrou, pix recebido). Perguntas sobre as finanças ("quanto gastei", "qual o saldo", "o que vence", "como está a fatura", "resumo do mês", "orçamento", "onde o arroz é mais barato", "quanto paguei no café") são "consulta": preencha o objeto consulta e não preencha valor, descricao nem duvidas. Se não for lançamento nem consulta, use "nao_e_lancamento" e responda em "resposta".',
       '- transferencia: "transferi", "passei", "mandei pix pra minha conta" entre contas da própria pessoa. Preencha conta_id (origem) e conta_destino_id (destino) com ids da lista de contas; deixe categoria_id null. Pagamento de pessoa ou loja não é transferência.',
       '- consulta.categoria_id: use a categoria mais geral que responda à pergunta ("alimentação" = categoria Alimentação inteira; "mercado" = Supermercado). consulta.mes: "mês passado" = mês anterior a hoje; "setembro" = setembro do ano mais recente até hoje.',
       '- data: YYYY-MM-DD. Sem data na mensagem = hoje. "ontem", "sexta", "dia 5" referem-se ao passado mais recente.',
@@ -187,7 +188,8 @@ const Interpretador = (function () {
         conta: (c.conta_id && Contexto.acharConta(ctx, c.conta_id)) ? String(c.conta_id) : '',
         cartao: (c.cartao_id && Contexto.acharCartao(ctx, c.cartao_id)) ? String(c.cartao_id) : '',
         mes: /^\d{4}-\d{2}$/.test(String(c.mes || '')) ? String(c.mes) : '',
-        dias: Number(c.dias) > 0 ? Math.floor(Number(c.dias)) : null
+        dias: Number(c.dias) > 0 ? Math.floor(Number(c.dias)) : null,
+        termo: String(c.termo || '').trim().slice(0, 60)
       };
       return r;
     }
