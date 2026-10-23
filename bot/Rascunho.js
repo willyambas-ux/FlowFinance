@@ -54,6 +54,7 @@ const Rascunho = (function () {
     const tipo = ehTransf_(r) ? 'Transferência' : (r.tipo === 'receita' ? 'Receita' : 'Despesa');
     L.push('<b>' + tipo + ' · ' + (faltaValor_(r) ? 'valor?' : Formato.brl(r.valor)) + '</b>');
     L.push(Telegram.esc(r.descricao));
+    if (r.itensResumo) L.push('<i>' + Telegram.esc(r.itensResumo) + '</i>');
 
     if (ehTransf_(r)) {
       L.push('De: ' + nomeConta_(ctx, r.conta));
@@ -163,6 +164,20 @@ const Rascunho = (function () {
 
   /** Texto e botões do estado atual. Se falta conta/pagamento, já abre a escolha. */
   function tela_(r, ctx) {
+    if (r.parecido && r.estado === 'aberto') {
+      const p = r.parecido;
+      const origem = p.origem === 'notificacao' ? 'notificação' : (p.origem || 'planilha');
+      return {
+        texto: textoResumo_(r, ctx) + '\n\n<b>Já existe um lançamento parecido:</b>\n' +
+          Telegram.esc(p.descricao) + ' · ' + Formato.brl(r.valor) + ' · ' + Formato.dataBR(p.data) +
+          ' <i>(' + Telegram.esc(origem) + (p.status === 'revisar' ? ', para revisar' : '') + ')</i>\n' +
+          'É o mesmo gasto?',
+        botoes: [
+          [botao_('Sim, juntar com ele', 'j|' + r.chave)],
+          [botao_('Não, é outro gasto', 'n|' + r.chave), botao_('Cancelar', 'x|' + r.chave)]
+        ]
+      };
+    }
     if (!faltaValor_(r)) {
       if (ehTransf_(r) && !r.conta) {
         return { texto: textoResumo_(r, ctx) + '\n\n<b>Saiu de qual conta?</b>', botoes: tecladoContas_(r, ctx, 'so', r.contaDestino) };
@@ -259,7 +274,7 @@ const Rascunho = (function () {
       status: status,
       origem: r.origem || 'telegram',
       quem: r.quem,
-      observacao: (r.origem === 'notificacao' ? 'Notificação: ' : 'Telegram: ') + String(r.textoOriginal || '').slice(0, 200)
+      observacao: r.observacao || ((r.origem === 'notificacao' ? 'Notificação: ' : 'Telegram: ') + String(r.textoOriginal || '').slice(0, 200))
     };
   }
 
@@ -274,6 +289,8 @@ const Rascunho = (function () {
       const salvo = FF.saveLancamento(registro_(r, 'revisar'));
       r.ids = salvo && salvo.id ? [String(salvo.id)] : [];
       r.revisar = r.ids.length > 0;
+      // Para o cupom achar este rascunho e fechá-lo se juntar com ele
+      if (r.revisar) cache_().put('lancrasc_' + r.ids[0], r.chave, TTL);
     } catch (e) {
       console.warn('não consegui gravar para revisar: ' + e);
     }
@@ -336,8 +353,65 @@ const Rascunho = (function () {
     return true;
   }
 
+  /**
+   * Cupom do mesmo gasto que já está na planilha (ex.: veio da notificação):
+   * completa aquele lançamento com loja, itens e categoria, sem criar outro.
+   */
+  function juntar_(r, ctx) {
+    const atual = FF.getLancamento(r.parecido.id);
+    if (!atual) {
+      r.parecido = null;
+      salvar(r); atualizar(r, ctx);
+      return 'Não achei mais aquele lançamento';
+    }
+    const revisar = atual.status === 'revisar';
+    const novo = {
+      descricao: revisar ? (r.descricao || atual.descricao) : (atual.descricao || r.descricao),
+      categoria: revisar ? (r.categoria || atual.categoria) : (atual.categoria || r.categoria),
+      observacao: [String(atual.observacao || '').trim(), r.observacao].filter(Boolean).join('\n').slice(0, 1500)
+    };
+    if (revisar) novo.status = String(atual.data) > Formato.hoje() ? 'agendado' : 'confirmado';
+    FF.saveLancamento(Object.assign({}, atual, novo, { id: atual.id }));
+
+    // O rascunho da notificação, se ainda aberto no Telegram, fica resolvido
+    const chaveNotif = cache_().get('lancrasc_' + atual.id);
+    const outro = chaveNotif ? ler(chaveNotif) : null;
+    if (outro && outro.estado === 'aberto') {
+      outro.estado = 'salvo';
+      salvar(outro);
+      Telegram.editar(outro.chatId, outro.messageId,
+        Telegram.esc(novo.descricao) + ' · ' + Formato.brl(outro.valor) + '\n<i>Completado com a foto do cupom.</i>', []);
+    }
+
+    // Mostra o resultado com o pagamento que já estava gravado
+    r.antes = atual;
+    r.ids = [String(atual.id)];
+    r.descricao = novo.descricao;
+    r.categoria = novo.categoria;
+    r.conta = atual.cartao ? '' : String(atual.conta || '');
+    r.cartao = String(atual.cartao || '');
+    r.data = String(atual.data).slice(0, 10);
+    r.parcelas = 1;
+    r.parecido = null;
+    r.estado = 'salvo';
+    salvar(r);
+    cache_().put('ultimo_' + r.usuarioId, r.chave, TTL);
+    const texto = textoResumo_(r, ctx, 'Juntado ao lançamento que já existia');
+    Telegram.editar(r.chatId, r.messageId, texto, [[botao_('Desfazer', 'u|' + r.chave)]]);
+    return 'Juntado';
+  }
+
   function desfazer(r) {
     if (r.estado !== 'salvo' || !r.ids.length) return false;
+    if (r.antes) {
+      // Juntado: volta o lançamento como estava, sem apagar
+      FF.saveLancamento(Object.assign({}, r.antes, { id: r.antes.id }));
+      r.estado = 'desfeito';
+      salvar(r);
+      Telegram.editar(r.chatId, r.messageId,
+        '<s>Cupom ' + Telegram.esc(r.descricao) + ' · ' + Formato.brl(r.valor) + '</s>\nDesfeito: o lançamento voltou a ser como era.', []);
+      return true;
+    }
     FF.deleteLancamentosBatch(r.ids);
     r.estado = 'desfeito';
     salvar(r);
@@ -382,6 +456,8 @@ const Rascunho = (function () {
       Telegram.editar(r.chatId, r.messageId, '<s>' + Telegram.esc(r.descricao) + '</s>\n' + nota, []);
       return 'Cancelado';
     }
+    if (acao === 'j') return r.parecido ? juntar_(r, ctx) : '';
+    if (acao === 'n') { r.parecido = null; salvar(r); atualizar(r, ctx); return ''; }
     if (acao === 'v') { atualizar(r, ctx); return ''; }
     if (acao === 'mp') { editar('Pagou com qual?', tecladoPagamento_(r, ctx)); return ''; }
     if (acao === 'sp') {

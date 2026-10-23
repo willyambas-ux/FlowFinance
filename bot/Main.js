@@ -108,8 +108,15 @@ function tratarMensagem_(msg) {
     return;
   }
 
+  // Foto (ou PDF/imagem como arquivo) de cupom, nota ou comprovante
+  if (msg.photo || msg.document) {
+    if (Cupom.processar(msg, chatId, usuarioId, quem)) return;
+    Telegram.enviar(chatId, 'Esse tipo de arquivo eu ainda não leio. Mande a foto do cupom ou um PDF.');
+    return;
+  }
+
   if (!texto) {
-    Telegram.enviar(chatId, 'Por enquanto eu entendo texto e áudio. Fotos e arquivos chegam nas próximas fases.');
+    Telegram.enviar(chatId, 'Eu entendo texto, áudio e foto de cupom ou comprovante.');
     return;
   }
 
@@ -121,6 +128,8 @@ function tratarMensagem_(msg) {
       '<i>mercado nordestão 187,40 crédito xp</i>',
       '<i>tênis 600 em 3x no cartão iti</i>',
       '<i>recebi 500 do freela no BB</i>',
+      '',
+      'Ou mande a <b>foto do cupom</b> ou do comprovante (Pix, maquininha). Na legenda, se quiser, diga o pagamento: <i>xp</i>, <i>itaú</i>.',
       '',
       'Também respondo perguntas:',
       '<i>quanto gastei em mercado este mês?</i>',

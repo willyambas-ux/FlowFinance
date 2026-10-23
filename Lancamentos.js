@@ -401,7 +401,7 @@ function normalizeLancamento_(data) {
   // 'quem' (quem lançou) só entra quando vem preenchido: assim uma edição pelo
   // web app, que não conhece esse campo, não apaga o valor gravado pelo bot.
   if (data.quem !== undefined && data.quem !== '') out.quem = String(data.quem);
-  // Mesmo cuidado com 'origem' (telegram | notificacao | app | importacao).
+  // Mesmo cuidado com 'origem' (telegram | notificacao | cupom | app | importacao).
   if (data.origem !== undefined && data.origem !== '') out.origem = String(data.origem);
   return out;
 }

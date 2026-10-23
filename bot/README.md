@@ -27,6 +27,16 @@ Quando você troca a categoria sugerida antes de confirmar, o bot cria uma regra
 
 Para ativar o áudio: crie uma conta em console.groq.com, gere uma API key e crie a propriedade `GROQ_API_KEY` no projeto do bot. Rode `testarChaveAudio` para conferir.
 
+## Foto do cupom ou comprovante
+
+Mande a foto (ou um PDF) do cupom fiscal, da NFC-e ou do comprovante de Pix/maquininha. A IA lê loja, valor pago, data, forma de pagamento e itens, e monta o rascunho com os botões de sempre.
+
+- Legenda opcional diz o pagamento: `xp`, `itaú`, `iti`, `vale`. Sem legenda, o bot pergunta.
+- Itens, desconto, CNPJ e a chave de acesso da NFC-e vão para a observação do lançamento (`origem = cupom`).
+- Se já existe um lançamento do mesmo valor em até 2 dias (por exemplo, o da notificação do banco), o bot pergunta se é o mesmo gasto. **Juntar** completa aquele lançamento com o nome da loja, a categoria e os itens, sem criar outro; Desfazer volta como era.
+- Se a foto chega primeiro, a notificação do mesmo valor depois só avisa que já está lançado.
+- A foto em si ainda não é guardada (precisaria de acesso ao Google Drive).
+
 ## Notificações do Android (Fase 2)
 
 O MacroDroid captura a notificação de compra do banco e manda ao bot. A compra já entra na planilha com status **revisar** (aparece em "Para revisar" no app) e o rascunho aparece no Telegram de quem gastou: Confirmar atualiza esse mesmo lançamento, Cancelar apaga. Se você revisar pelo app primeiro, o Telegram avisa que já foi resolvido. Transferências entre suas contas continuam só no Telegram até você confirmar.

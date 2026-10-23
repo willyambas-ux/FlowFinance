@@ -171,6 +171,15 @@ const Notificacoes = (function () {
     }, base));
   }
 
+  function lancadoPorCupom_(ex) {
+    try {
+      return Cupom.acharParecido(ex.valor, ex.direcao === 'entrada' ? 'receita' : 'despesa', ex.data, true);
+    } catch (e) {
+      console.warn('procura de cupom falhou: ' + e);
+      return null;
+    }
+  }
+
   /** Ponto de entrada (chamado pelo doPost). */
   function processar(p) {
     const uid = String(p.uid || '');
@@ -221,6 +230,14 @@ const Notificacoes = (function () {
       // A saída ainda não chegou (ou veio de banco não monitorado): guarda a conta de destino
       if (dest.conta) cache.put(chaveEntrada, dest.conta, JANELA_DUPLICADA_SEG);
       return 'entrada-aguardando';
+    }
+
+    // Já lançado pela foto do cupom (a foto chegou antes da notificação)
+    const jaDoCupom = lancadoPorCupom_(ex);
+    if (jaDoCupom) {
+      Telegram.enviar(uid, '<i>Notificação · ' + Telegram.esc(app || 'banco') + '</i>\n' + Formato.brl(ex.valor) +
+        ' já está lançado pela foto do cupom: ' + Telegram.esc(jaDoCupom.descricao) + '.');
+      return 'ja-lancado';
     }
 
     // Dinheiro recebido de outra pessoa: receita

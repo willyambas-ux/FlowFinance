@@ -59,10 +59,21 @@ const Interpretador = (function () {
     }
   };
 
+  /** Contas, cartões e categorias com ids, no formato que vai para a IA. */
+  function listas(ctx) {
+    return [
+      'CONTAS (id | nome | tipo | banco):',
+      ctx.contas.map(c => c.id + ' | ' + c.nome + ' | ' + c.tipo + (c.banco ? ' | ' + c.banco : '')).join('\n') || '(nenhuma)',
+      '',
+      'CARTÕES (id | nome | bandeira):',
+      ctx.cartoes.map(c => c.id + ' | ' + c.nome + (c.bandeira ? ' | ' + c.bandeira : '')).join('\n') || '(nenhum)',
+      '',
+      'CATEGORIAS (id | caminho | tipo):',
+      ctx.categorias.map(c => c.id + ' | ' + c.caminho + ' | ' + c.tipo).join('\n') || '(nenhuma)'
+    ].join('\n');
+  }
+
   function montarSistema_(ctx, quem) {
-    const linhasContas = ctx.contas.map(c => c.id + ' | ' + c.nome + ' | ' + c.tipo + (c.banco ? ' | ' + c.banco : '')).join('\n');
-    const linhasCartoes = ctx.cartoes.map(c => c.id + ' | ' + c.nome + (c.bandeira ? ' | ' + c.bandeira : '')).join('\n');
-    const linhasCats = ctx.categorias.map(c => c.id + ' | ' + c.caminho + ' | ' + c.tipo).join('\n');
 
     return [
       'Você interpreta mensagens curtas de um casal brasileiro que registra gastos e receitas num controle financeiro pessoal.',
@@ -83,18 +94,16 @@ const Interpretador = (function () {
       '- parcelas: número de parcelas se citado ("em 3x", "10 vezes"); senão 1. O valor é sempre o total.',
       '- duvidas: só o que realmente falta. Lista vazia quando estiver tudo claro.',
       '',
-      'CONTAS (id | nome | tipo | banco):',
-      linhasContas || '(nenhuma)',
-      '',
-      'CARTÕES (id | nome | bandeira):',
-      linhasCartoes || '(nenhum)',
-      '',
-      'CATEGORIAS (id | caminho | tipo):',
-      linhasCats || '(nenhuma)'
+      listas(ctx)
     ].join('\n');
   }
 
-  function chamarIA_(sistema, texto) {
+  /**
+   * Chama a API do Claude forçando uma ferramenta e devolve o input dela.
+   * conteudo: texto ou lista de blocos (texto, imagem, documento).
+   */
+  function chamarIA(sistema, conteudo, ferramenta, maxTokens) {
+    ferramenta = ferramenta || FERRAMENTA;
     const chave = Config.chaveIA();
     if (!chave) throw new Error('ANTHROPIC_API_KEY não configurada.');
     const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
@@ -106,11 +115,11 @@ const Interpretador = (function () {
       },
       payload: JSON.stringify({
         model: Config.modelo(),
-        max_tokens: 1024,
+        max_tokens: maxTokens || 1024,
         system: sistema,
-        tools: [FERRAMENTA],
-        tool_choice: { type: 'tool', name: FERRAMENTA.name },
-        messages: [{ role: 'user', content: texto }]
+        tools: [ferramenta],
+        tool_choice: { type: 'tool', name: ferramenta.name },
+        messages: [{ role: 'user', content: conteudo }]
       }),
       muteHttpExceptions: true
     });
@@ -129,7 +138,7 @@ const Interpretador = (function () {
   }
 
   /** Categoria pelas regras da aba Regras (têm prioridade sobre a IA). */
-  function categoriaPorRegra_(textoOriginal, descricao) {
+  function categoriaPorRegra(textoOriginal, descricao) {
     try {
       const alvo = Formato.semAcento(descricao + ' ' + textoOriginal).toUpperCase();
       const r = FF.aplicarRegras({ descricao: alvo });
@@ -146,7 +155,7 @@ const Interpretador = (function () {
    */
   function interpretar(texto, quem, ctx) {
     ctx = ctx || Contexto.carregar();
-    const bruto = chamarIA_(montarSistema_(ctx, quem), texto);
+    const bruto = chamarIA(montarSistema_(ctx, quem), texto);
 
     const r = {
       tipo: bruto.tipo,
@@ -194,12 +203,12 @@ const Interpretador = (function () {
     const cat = bruto.categoria_id ? Contexto.acharCategoria(ctx, bruto.categoria_id) : null;
     if (cat && cat.tipo === r.tipo) r.categoria = cat.id;
 
-    const daRegra = categoriaPorRegra_(texto, r.descricao);
+    const daRegra = categoriaPorRegra(texto, r.descricao);
     const catRegra = daRegra ? Contexto.acharCategoria(ctx, daRegra) : null;
     if (catRegra && catRegra.tipo === r.tipo) r.categoria = catRegra.id;
 
     return r;
   }
 
-  return { interpretar: interpretar };
+  return { interpretar: interpretar, chamarIA: chamarIA, listas: listas, categoriaPorRegra: categoriaPorRegra };
 })();

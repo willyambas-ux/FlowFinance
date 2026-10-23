@@ -11,19 +11,9 @@ const Audio = (function () {
 
   /** Baixa o arquivo de voz do Telegram como Blob. */
   function baixar_(fileId) {
-    const info = Telegram.chamar('getFile', { file_id: fileId });
-    if (!info.ok || !info.result || !info.result.file_path) {
-      throw new Error('o Telegram não entregou o arquivo de áudio');
-    }
-    if (info.result.file_size && info.result.file_size > LIMITE_BYTES) {
-      throw new Error('áudio grande demais');
-    }
-    const url = 'https://api.telegram.org/file/bot' + Config.token() + '/' + info.result.file_path;
-    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    if (resp.getResponseCode() !== 200) throw new Error('falha ao baixar o áudio (' + resp.getResponseCode() + ')');
+    const blob = Telegram.baixar(fileId, LIMITE_BYTES, 'áudio');
     // Mensagens de voz vêm como .oga (Ogg/Opus); a Groq reconhece pela extensão .ogg
-    const nome = String(info.result.file_path).split('/').pop().replace(/\.oga$/i, '.ogg');
-    return resp.getBlob().setName(nome || 'voz.ogg');
+    return blob.setName(String(blob.getName()).replace(/\.oga$/i, '.ogg') || 'voz.ogg');
   }
 
   /** Devolve o texto falado (string, pode ser vazia). */

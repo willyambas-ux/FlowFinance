@@ -57,6 +57,23 @@ const Telegram = (function () {
     return chamar('sendChatAction', { chat_id: chatId, action: 'typing' });
   }
 
+  /** Baixa um arquivo enviado ao bot (foto, voz, documento) como Blob. */
+  function baixar(fileId, limiteBytes, oque) {
+    oque = oque || 'arquivo';
+    const info = chamar('getFile', { file_id: fileId });
+    if (!info.ok || !info.result || !info.result.file_path) {
+      throw new Error('o Telegram não entregou o ' + oque);
+    }
+    if (limiteBytes && info.result.file_size && info.result.file_size > limiteBytes) {
+      throw new Error(oque + ' grande demais');
+    }
+    const url = 'https://api.telegram.org/file/bot' + Config.token() + '/' + info.result.file_path;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) throw new Error('falha ao baixar o ' + oque + ' (' + resp.getResponseCode() + ')');
+    const nome = String(info.result.file_path).split('/').pop();
+    return resp.getBlob().setName(nome || oque);
+  }
+
   /** Escapa texto para parse_mode HTML. */
   function esc(s) {
     return String(s == null ? '' : s)
@@ -71,6 +88,7 @@ const Telegram = (function () {
     editar: editar,
     responderBotao: responderBotao,
     digitando: digitando,
+    baixar: baixar,
     esc: esc
   };
 })();
