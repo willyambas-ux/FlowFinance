@@ -24,22 +24,26 @@ function criarTransferencia(data) {
   const desc = String(data.descricao || 'Transferência').trim();
   const status = data.status || 'pendente';
 
-  saveLancamento({
+  // Quem lançou e de onde veio (opcionais) seguem nas duas pernas
+  const extras = {};
+  ['origem', 'quem', 'observacao'].forEach(k => { if (data[k]) extras[k] = data[k]; });
+
+  saveLancamento(Object.assign({
     data: dataLanc,
     descricao: desc + ' (saída)',
     valor: -valor,
     conta: origem,
     status: status,
     transferencia_id: tid
-  });
-  saveLancamento({
+  }, extras));
+  saveLancamento(Object.assign({
     data: dataLanc,
     descricao: desc + ' (entrada)',
     valor: valor,
     conta: destino,
     status: status,
     transferencia_id: tid
-  });
+  }, extras));
 
   return { transferencia_id: tid };
 }

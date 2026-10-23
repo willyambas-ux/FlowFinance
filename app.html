@@ -350,7 +350,7 @@ function switchVGTab_(aba) {
 async function refreshVG_() {
   const contasArr  = Array.from(_vgFiltro.contas  || []);
   const cartoesArr = Array.from(_vgFiltro.cartoes || []);
-  const statusAll = ['pendente','agendado','confirmado','conciliado'];
+  const statusAll = ['pendente','agendado','confirmado','conciliado','revisar'];
   const [view, fluxo, extras] = await Promise.all([
     run('getMovimentacoesView', State.ano, State.mes, contasArr, statusAll, cartoesArr),
     run('getFluxoCaixa', State.ano, State.mes, contasArr),
@@ -2770,7 +2770,7 @@ async function renderHistoricoFechamentos_() {
 const _movFiltro = {
   contas: null,    // Set de ids; null = ainda não inicializado (todas)
   cartoes: null,   // Set de ids
-  status: new Set(['pendente','agendado','confirmado','conciliado'])
+  status: new Set(['pendente','agendado','confirmado','conciliado','revisar'])
 };
 
 async function initLancamentos() {
@@ -3144,7 +3144,7 @@ function cssEscape_(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
 /** Resumo (chips coloridos) por status + virtuais de um grupo. */
 function _grupoResumoHtml_(lancsGrupo) {
-  const c = { conciliado: 0, confirmado: 0, agendado: 0, pendente: 0 };
+  const c = { conciliado: 0, confirmado: 0, agendado: 0, pendente: 0, revisar: 0 };
   let virtuais = 0;
   lancsGrupo.forEach(l => {
     if (l._virtual) { virtuais++; return; }
@@ -3161,6 +3161,7 @@ function _grupoResumoHtml_(lancsGrupo) {
   html += chip(c.confirmado, 'confirmado', 'Confirmados');
   html += chip(c.agendado,   'agendado',   'Agendados');
   html += chip(c.pendente,   'pendente',   'Pendentes');
+  html += chip(c.revisar,    'revisar',    'A revisar');
   if (virtuais > 0) {
     html += '<span class="grp-chip" title="Virtuais: ' + virtuais + '"><span class="material-icons-outlined" style="font-size:11px;color:var(--info)">calculate</span>' + virtuais + '</span>';
   }
@@ -3919,7 +3920,7 @@ function renderCartoesTable_(view) {
 }
 
 function statusColor_(status) {
-  const map = { pendente: '#c0392b', agendado: '#6f8de8', confirmado: '#00a37c', conciliado: '#6a1b9a' };
+  const map = { pendente: '#c0392b', agendado: '#6f8de8', confirmado: '#00a37c', conciliado: '#6a1b9a', revisar: '#e67e22' };
   return map[status] || '#999';
 }
 
@@ -3964,7 +3965,8 @@ const STATUS_HINTS = {
   pendente:   'Previsto, ainda não realizou',
   agendado:   'Programado pelo banco (débito automático, agendamento)',
   confirmado: 'Já aconteceu — dinheiro entrou/saiu da conta',
-  conciliado: 'Confirmado e batido com o extrato'
+  conciliado: 'Confirmado e batido com o extrato',
+  revisar:    'Já aconteceu (veio do banco), falta conferir no app novo'
 };
 
 const STATUS_ICONS = {
@@ -3981,7 +3983,7 @@ function autoStatusForDate_(dateStr) {
 
 function effectiveLancStatus_() {
   // Se o usuário escolheu confirmado/conciliado, usa. Senão, deriva da data.
-  if (_lancModal.status === 'confirmado' || _lancModal.status === 'conciliado') {
+  if (_lancModal.status === 'confirmado' || _lancModal.status === 'conciliado' || _lancModal.status === 'revisar') {
     return _lancModal.status;
   }
   const dt = $('#lf-data') ? $('#lf-data').value : '';
@@ -3990,7 +3992,8 @@ function effectiveLancStatus_() {
 
 function setLancStatus_(value) {
   // null/'pendente'/'agendado' = auto (sem botão marcado)
-  if (value !== 'confirmado' && value !== 'conciliado') value = null;
+  // 'revisar' (veio do banco) é mantido ao editar aqui; confirme pelo app novo ou pelos botões
+  if (value !== 'confirmado' && value !== 'conciliado' && value !== 'revisar') value = null;
   _lancModal.status = value;
   $$('.status-btn').forEach(b => b.classList.toggle('active', b.dataset.status === value));
   const el = $('#lf-status-hint');

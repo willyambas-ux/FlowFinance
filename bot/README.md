@@ -29,7 +29,7 @@ Para ativar o áudio: crie uma conta em console.groq.com, gere uma API key e cri
 
 ## Notificações do Android (Fase 2)
 
-O MacroDroid captura a notificação de compra do banco e manda ao bot, que mostra o rascunho no Telegram de quem gastou.
+O MacroDroid captura a notificação de compra do banco e manda ao bot. A compra já entra na planilha com status **revisar** (aparece em "Para revisar" no app) e o rascunho aparece no Telegram de quem gastou: Confirmar atualiza esse mesmo lançamento, Cancelar apaga. Se você revisar pelo app primeiro, o Telegram avisa que já foi resolvido. Transferências entre suas contas continuam só no Telegram até você confirmar.
 
 - Lê: compras no cartão XP e Itaú/iti, Pix enviados pela XP, Carteira do Google e vale Pluxee.
 - Ignora boletos, avisos e promoções.

@@ -1,6 +1,8 @@
 /**
  * Notificacoes.js — recebe as notificações de compra que o MacroDroid captura no
- * Android e transforma em rascunho de lançamento no Telegram (você confirma).
+ * Android e transforma em lançamento com status "revisar": ele já entra na
+ * planilha (fila "Para revisar" do app) e aparece no Telegram com os botões.
+ * Transferências entre contas suas continuam só como rascunho no Telegram.
  *
  * Chamada: POST <WEBAPP_URL>?secret=<WEBHOOK_SECRET>&origem=notificacao&uid=<id do Telegram>
  * Corpo (formulário ou JSON): app, titulo, texto
@@ -228,6 +230,7 @@ const Notificacoes = (function () {
         descricao: ex.local === 'Pix recebido' ? 'Pix recebido' : 'Pix de ' + ex.local,
         conta: dest.conta, cartao: '', categoria: ''
       }, uid, quem, app, titulo, texto);
+      Rascunho.gravarParaRevisar(r);
       Rascunho.mostrarNovo(r, ctx);
       return 'receita';
     }
@@ -236,6 +239,7 @@ const Notificacoes = (function () {
       tipo: 'despesa', valor: ex.valor, data: ex.data, descricao: ex.local,
       conta: dest.conta, cartao: dest.cartao, categoria: categoria_(ctx, ex, quem)
     }, uid, quem, app, titulo, texto);
+    Rascunho.gravarParaRevisar(r);
     Rascunho.mostrarNovo(r, ctx);
     return 'ok';
   }

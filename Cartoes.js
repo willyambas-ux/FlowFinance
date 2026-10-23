@@ -248,7 +248,7 @@ function getSaldosCartoes(ano, mes) {
       const v = Number(l.valor) || 0;
       saldoDevedor += v;
       if (!limite || l.data <= limite) projetado += v;
-      if (l.status === 'confirmado' || l.status === 'conciliado') confirmado += v;
+      if (Utils.statusRealizado(l.status)) confirmado += v;
       // Fatura do mês = COMPRAS (exclui pagamentos/transferência) cuja competência é ano/mes
       if (yymm && !l.transferencia_id && faturaCompetenciaDe_(l, c) === yymm) faturaMes += v;
     });

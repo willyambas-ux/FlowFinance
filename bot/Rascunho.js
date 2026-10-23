@@ -49,6 +49,7 @@ const Rascunho = (function () {
     const L = [];
     if (titulo) L.push('<b>' + titulo + '</b>');
     else if (r.cabecalho) L.push('<i>' + Telegram.esc(r.cabecalho) + '</i>');
+    if (!titulo && r.revisar && r.estado === 'aberto') L.push('<i>Já está no app, na fila "Para revisar".</i>');
 
     const tipo = ehTransf_(r) ? 'Transferência' : (r.tipo === 'receita' ? 'Receita' : 'Despesa');
     L.push('<b>' + tipo + ' · ' + (faltaValor_(r) ? 'valor?' : Formato.brl(r.valor)) + '</b>');
@@ -245,24 +246,76 @@ const Rascunho = (function () {
       .map(l => String(l.id));
   }
 
+  /** O lançamento como vai para a planilha. */
+  function registro_(r, status) {
+    const valor = Math.abs(Number(r.valor));
+    return {
+      data: r.data,
+      descricao: r.descricao,
+      valor: r.tipo === 'receita' ? valor : -valor,
+      conta: r.cartao ? '' : r.conta,
+      cartao: r.cartao || '',
+      categoria: r.categoria || '',
+      status: status,
+      origem: r.origem || 'telegram',
+      quem: r.quem,
+      observacao: (r.origem === 'notificacao' ? 'Notificação: ' : 'Telegram: ') + String(r.textoOriginal || '').slice(0, 200)
+    };
+  }
+
+  /**
+   * Notificação do banco: grava já, com status "revisar", para aparecer na fila do
+   * app mesmo que ninguém toque no Telegram. Os botões continuam valendo: Confirmar
+   * atualiza esse mesmo lançamento; Cancelar apaga.
+   */
+  function gravarParaRevisar(r) {
+    if (ehTransf_(r) || faltaValor_(r)) return r;
+    try {
+      const salvo = FF.saveLancamento(registro_(r, 'revisar'));
+      r.ids = salvo && salvo.id ? [String(salvo.id)] : [];
+      r.revisar = r.ids.length > 0;
+    } catch (e) {
+      console.warn('não consegui gravar para revisar: ' + e);
+    }
+    return salvar(r);
+  }
+
+  /**
+   * Confirma pelo Telegram um lançamento que já está gravado como "revisar".
+   * Devolve false se ele foi apagado ou já revisado no app (e avisa no chat).
+   */
+  function confirmarRevisar_(r, status) {
+    const atual = FF.getLancamento(r.ids[0]);
+    if (!atual) {
+      r.estado = 'cancelado';
+      salvar(r);
+      Telegram.editar(r.chatId, r.messageId, '<s>' + Telegram.esc(r.descricao) + '</s>\nEsse lançamento foi apagado no app.', []);
+      return false;
+    }
+    if (atual.status !== 'revisar') {
+      r.estado = 'salvo';
+      salvar(r);
+      Telegram.editar(r.chatId, r.messageId, Telegram.esc(r.descricao) + ' · ' + Formato.brl(r.valor) + '\nJá foi revisado no app.', []);
+      return false;
+    }
+    const novo = registro_(r, status);
+    const mesmaFatura = novo.cartao && String(novo.cartao) === String(atual.cartao);
+    FF.saveLancamento(Object.assign({}, atual, novo, {
+      id: atual.id,
+      fatura_competencia: mesmaFatura ? atual.fatura_competencia : ''
+    }));
+    return true;
+  }
+
   function confirmar_(r, ctx) {
+    const hoje = Formato.hoje();
+    const status = r.data > hoje ? 'agendado' : 'confirmado';
     if (ehTransf_(r)) {
       r.ids = confirmarTransferencia_(r);
+    } else if (r.revisar && r.ids.length) {
+      if (!confirmarRevisar_(r, status)) return false;
     } else {
-      const hoje = Formato.hoje();
-      const valor = Math.abs(Number(r.valor));
-      const registro = {
-        data: r.data,
-        descricao: r.descricao,
-        valor: r.tipo === 'receita' ? valor : -valor,
-        conta: r.cartao ? '' : r.conta,
-        cartao: r.cartao || '',
-        categoria: r.categoria || '',
-        status: r.data > hoje ? 'agendado' : 'confirmado',
-        origem: r.origem || 'telegram',
-        quem: r.quem,
-        observacao: (r.origem === 'notificacao' ? 'Notificação: ' : 'Telegram: ') + String(r.textoOriginal || '').slice(0, 200)
-      };
+      const registro = registro_(r, status);
       let criados;
       if (r.parcelas > 1) {
         criados = FF.criarParcelamento(registro, r.parcelas, 1, 'mensal', 1) || [];
@@ -280,6 +333,7 @@ const Rascunho = (function () {
     let texto = textoResumo_(r, ctx, titulo);
     if (aprendido) texto += '\n\n<i>' + Telegram.esc(aprendido) + '</i>';
     Telegram.editar(r.chatId, r.messageId, texto, [[botao_('Desfazer', 'u|' + r.chave)]]);
+    return true;
   }
 
   function desfazer(r) {
@@ -310,13 +364,22 @@ const Rascunho = (function () {
 
     if (acao === 'ok') {
       if (faltaPagamento_(r) || faltaValor_(r)) return 'Falta informação';
-      confirmar_(r, ctx);
-      return 'Lançado';
+      return confirmar_(r, ctx) ? 'Lançado' : 'Já resolvido no app';
     }
     if (acao === 'x') {
+      let nota = 'Cancelado.';
+      if (r.revisar && r.ids.length) {
+        const atual = FF.getLancamento(r.ids[0]);
+        if (atual && atual.status === 'revisar') {
+          FF.deleteLancamentosBatch(r.ids);
+          nota = 'Cancelado e apagado da fila de revisão.';
+        } else if (atual) {
+          nota = 'Já tinha sido revisado no app; ficou como está.';
+        }
+      }
       r.estado = 'cancelado';
       salvar(r);
-      Telegram.editar(r.chatId, r.messageId, '<s>' + Telegram.esc(r.descricao) + '</s>\nCancelado.', []);
+      Telegram.editar(r.chatId, r.messageId, '<s>' + Telegram.esc(r.descricao) + '</s>\n' + nota, []);
       return 'Cancelado';
     }
     if (acao === 'v') { atualizar(r, ctx); return ''; }
@@ -375,6 +438,7 @@ const Rascunho = (function () {
 
   return {
     criar: criar,
+    gravarParaRevisar: gravarParaRevisar,
     ler: ler,
     salvar: salvar,
     mostrarNovo: mostrarNovo,
