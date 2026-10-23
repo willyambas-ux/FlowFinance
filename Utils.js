@@ -42,7 +42,17 @@ const Utils = (function () {
     return s === 'true' || s === '1' || s === 'sim';
   }
 
+  /**
+   * Status em que o dinheiro já entrou ou saiu de verdade.
+   * 'revisar' = aconteceu (veio de notificação do banco), mas falta você conferir
+   * categoria/conta; por isso já conta no saldo.
+   */
+  function statusRealizado(status) {
+    return status === 'confirmado' || status === 'conciliado' || status === 'revisar';
+  }
+
   return {
+    statusRealizado: statusRealizado,
     uuid: uuid,
     today: today,
     formatDate: formatDate,

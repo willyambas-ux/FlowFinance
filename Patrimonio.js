@@ -20,7 +20,7 @@ function getBalancoPatrimonial(dataAlvo) {
     lancs.forEach(l => {
       if (l.conta !== c.id) return;
       if (l.data > dataAlvo) return;
-      if (l.status === 'confirmado' || l.status === 'conciliado') {
+      if (Utils.statusRealizado(l.status)) {
         saldo += Number(l.valor) || 0;
       }
     });

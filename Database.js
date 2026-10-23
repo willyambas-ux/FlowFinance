@@ -46,12 +46,36 @@ const DB = (function () {
     return sheet.getRange(1, 1, 1, cols).getValues()[0].map(h => String(h).trim());
   }
 
+  // Memória da execução atual: uma mesma chamada (ex.: o painel) lê a aba
+  // Lancamentos várias vezes; sem isso cada leitura iria de novo à planilha,
+  // porque a aba costuma passar do limite de ~95 KB do CacheService.
+  // Vale só durante uma execução do Apps Script e é limpa a cada escrita.
+  const memo_ = {};
+
+  function copiar_(rows) {
+    return rows.map(function (r) { return Object.assign({}, r); });
+  }
+
   function readAll(sheetName) {
+    if (memo_[sheetName]) return copiar_(memo_[sheetName]);
     const cacheKey = SHEET_TO_CACHE_KEY[sheetName];
+    let rows;
     if (cacheKey && typeof Cache !== 'undefined') {
-      return Cache.getOrFetch(cacheKey, function () { return readAllUncached_(sheetName); });
+      rows = Cache.getOrFetch(cacheKey, function () { return readAllUncached_(sheetName); });
+    } else {
+      rows = readAllUncached_(sheetName);
     }
-    return readAllUncached_(sheetName);
+    memo_[sheetName] = rows;
+    return copiar_(rows);
+  }
+
+  /** Lê direto da planilha, ignorando caches (dados que outro script pode ter mudado). */
+  function readAllFresh(sheetName) {
+    const rows = readAllUncached_(sheetName);
+    memo_[sheetName] = rows;
+    const cacheKey = SHEET_TO_CACHE_KEY[sheetName];
+    if (cacheKey && typeof Cache !== 'undefined') Cache.put(cacheKey, rows);
+    return copiar_(rows);
   }
 
   function readAllUncached_(sheetName) {
@@ -65,6 +89,7 @@ const DB = (function () {
   }
 
   function invalidateCache_(sheetName) {
+    delete memo_[sheetName];
     const key = SHEET_TO_CACHE_KEY[sheetName];
     if (key && typeof Cache !== 'undefined') Cache.invalidate(key);
   }
@@ -220,6 +245,7 @@ const DB = (function () {
     getSheet: getSheet,
     getHeaders: getHeaders,
     readAll: readAll,
+    readAllFresh: readAllFresh,
     insert: insert,
     batchInsert: batchInsert,
     update: update,

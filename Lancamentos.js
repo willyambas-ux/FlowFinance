@@ -1,6 +1,9 @@
 /**
  * Lancamentos.gs — CRUD + agregações para visão geral.
- * Status válidos: pendente | agendado | confirmado | conciliado
+ * Status válidos: pendente | agendado | confirmado | conciliado | revisar
+ *   pendente = a pagar/receber (vai para o Google Agenda); agendado = programado;
+ *   confirmado/conciliado = realizado; revisar = realizado, falta conferir (veio de
+ *   notificação do banco ou foi salvo para revisar no app).
  * Convenção de sinal: receitas têm valor positivo, despesas negativo.
  */
 const SHEET_LANCAMENTOS = 'Lancamentos';
@@ -44,6 +47,12 @@ function saveLancamento(data) {
     } catch (e) { /* falha do Calendar não derruba o save */ }
   }
   return saved;
+}
+
+/** Um lançamento pelo id, lido direto da planilha (null se não existir). */
+function getLancamento(id) {
+  if (!id) return null;
+  return DB.readAllFresh(SHEET_LANCAMENTOS).find(l => String(l.id) === String(id)) || null;
 }
 
 function deleteLancamento(id) {
@@ -387,12 +396,13 @@ function normalizeLancamento_(data) {
     calendar_event_id: data.calendar_event_id || '',
     conciliado: data.status === 'conciliado',
     observacao: data.observacao || '',
-    origem: data.origem || '',
     fatura_competencia: data.fatura_competencia ? String(data.fatura_competencia).slice(0, 7) : ''
   };
   // 'quem' (quem lançou) só entra quando vem preenchido: assim uma edição pelo
   // web app, que não conhece esse campo, não apaga o valor gravado pelo bot.
   if (data.quem !== undefined && data.quem !== '') out.quem = String(data.quem);
+  // Mesmo cuidado com 'origem' (telegram | notificacao | app | importacao).
+  if (data.origem !== undefined && data.origem !== '') out.origem = String(data.origem);
   return out;
 }
 
@@ -512,7 +522,7 @@ function getMovimentacoesView(ano, mes, contasIds, statusList, cartoesIds) {
   lancsAll.forEach(l => {
     if (l.data >= r.start) return;
     if (l.conta && contasOpSet.has(String(l.conta))) {
-      if (l.status === 'confirmado' || l.status === 'conciliado') {
+      if (Utils.statusRealizado(l.status)) {
         saldoAnteriorPorConta[l.conta] = (saldoAnteriorPorConta[l.conta] || 0) + (Number(l.valor) || 0);
       }
     } else if (l.cartao && cartoesSet.has(String(l.cartao))) {
@@ -809,7 +819,7 @@ function getSaldosContas(ate) {
       if (l.conta !== conta.id) return;
       const v = Number(l.valor) || 0;
       if (!limite || l.data <= limite) projetado += v;
-      if (l.status === 'confirmado' || l.status === 'conciliado') confirmado += v;
+      if (Utils.statusRealizado(l.status)) confirmado += v;
     });
     return {
       id: conta.id,

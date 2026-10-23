@@ -6,12 +6,27 @@
 const APP_NAME = 'FlowFinance';
 const APP_VERSION = '0.1.0';
 
+/**
+ * Duas interfaces na mesma URL:
+ *   /exec                         app novo (celular primeiro): novo.html
+ *   /exec?v=classico&tela=cartoes app clássico (index.html), aberto na tela pedida
+ */
+const TELAS_CLASSICO_ = ['visao-geral', 'lancamentos', 'cartoes', 'patrimonio', 'metas',
+  'relatorios', 'importar', 'fechamento', 'cadastros', 'configuracoes'];
+
 function doGet(e) {
   Init.ensureAllSheets();
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
+  const p = (e && e.parameter) || {};
+  let t;
+  if (p.v === 'classico') {
+    t = HtmlService.createTemplateFromFile('index');
+    t.tela = TELAS_CLASSICO_.indexOf(p.tela) !== -1 ? p.tela : '';
+  } else {
+    t = HtmlService.createTemplateFromFile('novo');
+  }
+  return t.evaluate()
     .setTitle(APP_NAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 

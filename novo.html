@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#F3F4F1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+  <?!= include('novo_css'); ?>
+</head>
+<body>
+  <div id="app" class="app">
+    <main id="tela" class="tela" tabindex="-1" aria-live="polite"></main>
+
+    <form id="rapido" class="rapido" autocomplete="off">
+      <label for="rapido-texto" class="sr">Lançamento rápido</label>
+      <input id="rapido-texto" type="text" enterkeyhint="send" placeholder="Ex.: almoço 32,50 débito itaú">
+      <button type="submit" class="rapido-enviar" aria-label="Lançar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+
+    <nav class="abas" aria-label="Seções">
+      <button type="button" class="aba" data-aba="inicio">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg>Início
+      </button>
+      <button type="button" class="aba" data-aba="lancamentos">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9"/></svg>Lançamentos
+      </button>
+      <button type="button" class="aba" data-aba="painel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>Painel
+      </button>
+      <button type="button" class="aba" data-aba="mais">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>Mais
+      </button>
+    </nav>
+  </div>
+
+  <div id="folha-fundo" class="folha-fundo" hidden></div>
+  <section id="folha" class="folha" role="dialog" aria-modal="true" aria-labelledby="folha-titulo" hidden></section>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+
+  <div id="trava" class="trava" hidden>
+    <div class="trava-caixa">
+      <div class="marca"><span class="marca-logo" aria-hidden="true">FF</span>FlowFinance</div>
+      <div id="trava-corpo"></div>
+    </div>
+  </div>
+
+  <?!= include('novo_js'); ?>
+</body>
+</html>

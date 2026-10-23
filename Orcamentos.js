@@ -101,7 +101,7 @@ function getOrcamentosProgresso(ano, mes) {
     let consumido = 0;
     let nome = '—';
     let qtdSubs = 0;
-    const byStatus = { pendente: 0, agendado: 0, confirmado: 0, conciliado: 0 };
+    const byStatus = { pendente: 0, agendado: 0, confirmado: 0, conciliado: 0, revisar: 0 };
 
     function accStatus_(l) {
       const v = Math.abs(Number(l.valor) || 0);

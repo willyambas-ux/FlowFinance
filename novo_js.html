@@ -1,0 +1,1133 @@
+<script>
+'use strict';
+/* ============================================================================
+ * FlowFinance — app novo (celular primeiro).
+ * Telas: Início (saldo, fila de revisão, a pagar), Lançamentos (mês), Painel, Mais.
+ * Backend: App.js (funções app*), IA.js e Auth.js.
+ * ========================================================================== */
+
+const S = {
+  aba: 'inicio',
+  boot: null,
+  inicio: null,
+  lista: null,
+  listaMes: null,
+  painel: null,
+  painelMes: null,
+  filtro: 'tudo',
+  busca: '',
+  saldoAberto: false,
+  carregadoEm: {}
+};
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const STATUS_NOMES = { pendente: 'A pagar', agendado: 'Agendado', confirmado: 'Confirmado', conciliado: 'Conciliado', revisar: 'A revisar' };
+const CORES_PESSOAS = ['var(--verde)', 'var(--cobre)', '#5B7FD6', '#8A5CC2', 'var(--fraco)'];
+
+const ICONE = {
+  editar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
+  fechar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  esq: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  dir: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  atualizar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>',
+  mais: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  busca: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>',
+  brilho: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/></svg>',
+  seta: '<svg class="seta" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>'
+};
+
+/* ============================================================================
+ * Servidor
+ * ========================================================================== */
+
+/** Chama uma função do Apps Script e devolve Promise. */
+function run(fn) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  if (window.__API__) return window.__API__(fn, args);
+  return new Promise(function (resolve, reject) {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(function (e) { reject(e instanceof Error ? e : new Error(String(e && e.message || e))); })[fn].apply(null, args);
+  });
+}
+
+/* ============================================================================
+ * Formatação
+ * ========================================================================== */
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function numBR(v, casas) {
+  casas = casas === undefined ? 2 : casas;
+  const n = Math.abs(Number(v) || 0);
+  const partes = n.toFixed(casas).split('.');
+  const inteiro = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return casas ? inteiro + ',' + partes[1] : inteiro;
+}
+function brl(v) { return (Number(v) < 0 ? '−' : '') + 'R$ ' + numBR(v); }
+/** Valor de lista: "−187,40" / "+320,00" */
+function sinal(v) { return (Number(v) < 0 ? '−' : '+') + numBR(v); }
+/** Sem centavos, com sinal: "+18.000" / "−12.431" */
+function curto(v, comMais) { const n = Math.round(Number(v) || 0); return (n < 0 ? '−' : (comMais && n > 0 ? '+' : '')) + numBR(n, 0); }
+
+function hojeISO() { return S.boot ? S.boot.hoje : new Date().toISOString().slice(0, 10); }
+function partesData(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? { a: +m[1], m: +m[2], d: +m[3] } : null; }
+function dataObj(iso) { const p = partesData(iso); return p ? new Date(p.a, p.m - 1, p.d) : new Date(); }
+function isoDe(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function diasEntre(a, b) { return Math.round((dataObj(b) - dataObj(a)) / 86400000); }
+function rotuloDia(iso) {
+  const dif = diasEntre(hojeISO(), iso);
+  if (dif === 0) return 'Hoje';
+  if (dif === -1) return 'Ontem';
+  if (dif === 1) return 'Amanhã';
+  const d = dataObj(iso);
+  return DIAS_CURTOS[d.getDay()] + ', ' + d.getDate() + ' ' + MESES_CURTOS[d.getMonth()];
+}
+function nomeMes(ano, mes) { return MESES[mes - 1] + ' ' + ano; }
+function maiuscula(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+function textoParaNumero(s) {
+  s = String(s || '').trim().replace(/[^\d,.\-]/g, '');
+  if (!s) return 0;
+  if (s.indexOf(',') !== -1) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s);
+  return isNaN(n) ? 0 : Math.abs(n);
+}
+
+/* ============================================================================
+ * Cadastros
+ * ========================================================================== */
+
+function acharConta(id) { return (S.boot.contas || []).find(c => c.id === String(id)) || null; }
+function acharCartao(id) { return (S.boot.cartoes || []).find(c => c.id === String(id)) || null; }
+function acharCategoria(id) { return (S.boot.categorias || []).find(c => c.id === String(id)) || null; }
+function nomePagamento(it) {
+  if (it.cartao) { const c = acharCartao(it.cartao); return c ? c.nome : 'Cartão'; }
+  if (it.conta) { const c = acharConta(it.conta); return c ? c.nome : 'Conta'; }
+  return '';
+}
+function nomeCategoria(id) { const c = acharCategoria(id); return c ? c.nome : ''; }
+function origemTexto(o) { return ({ notificacao: 'banco', telegram: 'Telegram', app: 'app', importacao: 'extrato' })[o] || ''; }
+
+/** Mesmo cálculo do servidor (Cartoes.js): mês de vencimento da fatura de uma compra. */
+function competenciaFatura(cartaoId, iso) {
+  const c = acharCartao(cartaoId);
+  const p = partesData(iso);
+  if (!c || !p) return '';
+  const F = Math.max(1, Math.min(31, c.dia_fechamento || 1));
+  const V = Math.max(1, Math.min(31, c.dia_vencimento || F));
+  let a = p.a, m = p.m;
+  if (p.d > F) { m++; if (m > 12) { m = 1; a++; } }
+  if (F >= V) { m++; if (m > 12) { m = 1; a++; } }
+  return { ano: a, mes: m, venc: V };
+}
+
+/* ============================================================================
+ * Aviso (toast)
+ * ========================================================================== */
+
+let _avisoTimer = null;
+function aviso(texto, opcoes) {
+  opcoes = opcoes || {};
+  const el = document.getElementById('aviso');
+  el.className = 'aviso' + (opcoes.erro ? ' erro' : '');
+  el.innerHTML = '<span>' + esc(texto) + '</span>' + (opcoes.acao ? '<button type="button">' + esc(opcoes.acao) + '</button>' : '');
+  el.hidden = false;
+  if (opcoes.acao) {
+    el.querySelector('button').onclick = function () { el.hidden = true; opcoes.aoClicar(); };
+  }
+  clearTimeout(_avisoTimer);
+  _avisoTimer = setTimeout(function () { el.hidden = true; }, opcoes.erro ? 7000 : (opcoes.acao ? 6500 : 3500));
+}
+function erro(e) { aviso((e && e.message) || String(e), { erro: true }); }
+
+/* ============================================================================
+ * Abas
+ * ========================================================================== */
+
+function mostrarAba(aba) {
+  S.aba = aba;
+  document.querySelectorAll('.aba').forEach(b => {
+    if (b.dataset.aba === aba) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  document.getElementById('app').classList.toggle('com-rapido', aba === 'inicio');
+  window.scrollTo(0, 0);
+  desenhar();
+  carregarAba(false);
+}
+
+function desenhar() {
+  const tela = document.getElementById('tela');
+  if (S.aba === 'inicio') tela.innerHTML = telaInicio();
+  else if (S.aba === 'lancamentos') tela.innerHTML = telaLancamentos();
+  else if (S.aba === 'painel') tela.innerHTML = telaPainel();
+  else tela.innerHTML = telaMais();
+  ligarTela();
+}
+
+/** Busca os dados da aba atual (de novo se pedido ou se já passou 1 minuto). */
+function carregarAba(forcar) {
+  const aba = S.aba;
+  const velho = Date.now() - (S.carregadoEm[aba] || 0) > 60000;
+  let p = null;
+  if (aba === 'inicio' && (forcar || !S.inicio || velho)) {
+    p = run('appInicio').then(d => { S.inicio = d; });
+  } else if (aba === 'lancamentos') {
+    if (!S.listaMes) S.listaMes = mesAtual();
+    if (forcar || !S.lista || velho) {
+      const m = S.listaMes;
+      p = run('appListar', m.ano, m.mes).then(d => { if (S.listaMes === m) S.lista = d; });
+    }
+  } else if (aba === 'painel') {
+    if (!S.painelMes) S.painelMes = mesAtual();
+    if (forcar || !S.painel || velho) {
+      const m = S.painelMes;
+      p = run('appPainel', m.ano, m.mes).then(d => { if (S.painelMes === m) S.painel = d; });
+    }
+  }
+  if (!p) return Promise.resolve();
+  marcarCarregando(true);
+  return p.then(function () {
+    S.carregadoEm[aba] = Date.now();
+    S['erro_' + aba] = null;
+  }).catch(function (e) {
+    S['erro_' + aba] = (e && e.message) || String(e);
+  }).then(function () {
+    marcarCarregando(false);
+    if (S.aba === aba) desenhar();
+  });
+}
+
+function marcarCarregando(sim) {
+  const b = document.querySelector('[data-acao="atualizar"]');
+  if (b) b.classList.toggle('girando', !!sim);
+}
+
+/**
+ * Depois de gravar: tudo fica velho e a aba atual recarrega. Os dados antigos
+ * continuam na tela até chegar a resposta (sem piscar e sem quebrar cliques).
+ */
+function invalidar() {
+  S.carregadoEm = {};
+  return carregarAba(true);
+}
+
+function mesAtual() { const p = partesData(hojeISO()); return { ano: p.a, mes: p.m }; }
+function mudarMes(m, delta) {
+  let ano = m.ano, mes = m.mes + delta;
+  if (mes > 12) { mes = 1; ano++; }
+  if (mes < 1) { mes = 12; ano--; }
+  return { ano: ano, mes: mes };
+}
+
+function esqueleto(alturas) {
+  return alturas.map(h => '<div class="esq" style="height:' + h + 'px;margin:12px 20px"></div>').join('');
+}
+function falhaTela(msg) {
+  return '<div class="erro-tela"><p>Não consegui carregar: ' + esc(msg) + '</p>' +
+    '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="atualizar">Tentar de novo</button></div>';
+}
+function botaoAtualizar() {
+  return '<button type="button" class="icone-btn sem-borda" data-acao="atualizar" aria-label="Atualizar">' + ICONE.atualizar + '</button>';
+}
+
+/* ============================================================================
+ * Início
+ * ========================================================================== */
+
+function telaInicio() {
+  const p = partesData(hojeISO());
+  const quem = S.boot.quem;
+  let h = '<header class="topo"><div class="topo-titulos">' +
+    '<span class="topo-mini">' + esc(maiuscula(nomeMes(p.a, p.m))) + '</span>' +
+    '<h1 class="topo-titulo">' + (quem ? 'Olá, ' + esc(quem) : 'Olá') + '</h1></div>' + botaoAtualizar() + '</header>';
+
+  if (!quem) h += cartaoNome();
+  if (S.erro_inicio && !S.inicio) return h + falhaTela(S.erro_inicio);
+  const d = S.inicio;
+  if (!d) return h + esqueleto([150, 24, 76, 76, 24, 160]);
+
+  const ultimoDia = new Date(p.a, p.m, 0).getDate();
+  h += '<section class="saldo" aria-label="Saldo">' +
+    '<div class="saldo-topo"><div><div class="saldo-rotulo">Saldo nas contas</div>' +
+    '<div class="saldo-valor">' + brl(d.saldo) + '</div></div>' +
+    '<button type="button" class="saldo-toggle" data-acao="saldo" aria-expanded="' + S.saldoAberto + '">' + (S.saldoAberto ? 'Fechar' : 'Contas') + '</button></div>' +
+    '<div class="saldo-grade">' +
+    '<div><span>Entrou</span><span class="cor-entrou">' + curto(d.mes.entrou, true) + '</span></div>' +
+    '<div><span>Saiu</span><span class="cor-saiu">' + curto(-d.mes.saiu) + '</span></div>' +
+    '<div><span>Previsto até ' + ultimoDia + '</span><span>' + curto(d.mes.previsto, true) + '</span></div></div>';
+  if (S.saldoAberto) {
+    h += '<div class="saldo-contas">' + d.contas.map(c =>
+      '<div><span>' + esc(c.nome) + '</span><span>' + brl(c.saldo) + '</span></div>').join('') + '</div>';
+  }
+  h += '</section>';
+
+  // Fila de revisão
+  const completos = d.revisar.filter(r => r.conta || r.cartao);
+  h += '<div class="secao"><h2>Para revisar' + (d.revisar.length ? ' <span class="contador">' + d.revisar.length + '</span>' : '') + '</h2>' +
+    (completos.length > 1 ? '<button type="button" class="link-btn" data-acao="confirmar-todos">Confirmar todos</button>' : '') + '</div>';
+  if (!d.revisar.length) {
+    h += '<div class="vazio">Nada para revisar. As compras que o banco avisar no celular aparecem aqui.</div>';
+  } else {
+    h += '<div class="fila">' + d.revisar.map(itemRevisar).join('') + '</div>';
+  }
+
+  // A pagar
+  h += '<div class="secao"><h2>A pagar</h2><span class="topo-mini">atrasados e próximos 7 dias</span></div>';
+  if (!d.proximos.length) {
+    h += '<div class="vazio">Nada vencendo nos próximos 7 dias.</div>';
+  } else {
+    h += '<div class="bloco lista">' + d.proximos.map((it, i) => {
+      const dt = dataObj(it.data);
+      return '<button type="button" class="item" data-proximo="' + i + '">' +
+        '<span class="item-dia"><b>' + String(dt.getDate()).padStart(2, '0') + '</b>' + MESES_CURTOS[dt.getMonth()] + '</span>' +
+        '<span class="item-corpo"><span class="item-desc">' + esc(it.descricao) + '</span>' +
+        '<span class="item-meta">' + (it.atrasado ? '<span class="tag-atrasado">Atrasado</span> · ' : '') +
+        esc(it.fatura ? 'fatura do cartão' : (nomePagamento(it) || STATUS_NOMES[it.status] || '')) + '</span></span>' +
+        '<span class="item-valor' + (it.valor > 0 ? ' positivo' : '') + '">' + sinal(it.valor) + '</span></button>';
+    }).join('') + '</div>';
+  }
+  return h;
+}
+
+function itemRevisar(r) {
+  const pag = nomePagamento(r);
+  const cat = nomeCategoria(r.categoria);
+  const meta = [];
+  if (pag) meta.push(esc(pag));
+  meta.push(esc(rotuloDia(r.data).toLowerCase()));
+  if (origemTexto(r.origem)) meta.push(esc(origemTexto(r.origem)));
+  if (r.quem && S.boot.nomes.length > 1) meta.push(esc(r.quem));
+  return '<div class="rev">' +
+    '<button type="button" class="rev-corpo" data-editar="' + esc(r.id) + '">' +
+    '<span class="rev-linha"><span class="rev-desc">' + esc(r.descricao) + '</span>' +
+    '<span class="rev-valor' + (r.valor > 0 ? ' positivo' : '') + '">' + sinal(r.valor) + '</span></span>' +
+    '<span class="rev-meta">' + (cat ? '<span class="chip">' + esc(cat) + '</span>' : '<span class="chip falta">sem categoria</span>') +
+    (pag ? '' : '<span class="chip falta">falta conta</span>') +
+    '<span>' + meta.join(' · ') + '</span></span></button>' +
+    '<button type="button" class="acao" data-editar="' + esc(r.id) + '" aria-label="Editar ' + esc(r.descricao) + '">' + ICONE.editar + '</button>' +
+    '<button type="button" class="acao confirmar" data-confirmar="' + esc(r.id) + '" aria-label="Confirmar ' + esc(r.descricao) + '"' +
+    ((r.conta || r.cartao) ? '' : ' disabled title="Escolha a conta antes"') + '>' + ICONE.check + '</button></div>';
+}
+
+function cartaoNome() {
+  const nomes = S.boot.nomes || [];
+  return '<div class="bloco bloco-pad" style="margin-bottom:12px"><p style="margin:0 0 10px;font-weight:700">Como você quer aparecer nos lançamentos?</p>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    nomes.map(n => '<button type="button" class="filtro" data-nome="' + esc(n) + '">' + esc(n) + '</button>').join('') +
+    '<button type="button" class="filtro" data-acao="outro-nome">Outro nome</button></div></div>';
+}
+
+function confirmarItem(id) {
+  if (!S.inicio) return;
+  const it = (S.inicio.revisar || []).find(r => r.id === id);
+  if (!it) return;
+  if (!it.conta && !it.cartao) { abrirEdicao(it); return; }
+  // Some da fila na hora; volta se der erro
+  S.inicio.revisar = S.inicio.revisar.filter(r => r.id !== id);
+  desenhar();
+  const dados = dadosDoItem(it, 'confirmado');
+  run('appSalvar', dados, {}).then(function () {
+    aviso('Confirmado: ' + it.descricao, {
+      acao: 'Desfazer', aoClicar: function () {
+        run('appSalvar', dadosDoItem(it, 'revisar'), {}).then(invalidar).catch(erro);
+      }
+    });
+    invalidar();
+  }).catch(function (e) { erro(e); invalidar(); });
+}
+
+function dadosDoItem(it, status) {
+  return {
+    id: it.id, tipo: it.valor > 0 ? 'receita' : 'despesa', descricao: it.descricao, valor: Math.abs(it.valor),
+    data: it.data, conta: it.conta, cartao: it.cartao, categoria: it.categoria, quem: it.quem, status: status
+  };
+}
+
+function confirmarTodos() {
+  if (!S.inicio) return;
+  const ids = (S.inicio.revisar || []).filter(r => r.conta || r.cartao).map(r => r.id);
+  if (!ids.length) return;
+  run('appConfirmarTodos', ids).then(function (r) {
+    let msg = r.confirmados === 1 ? '1 lançamento confirmado' : r.confirmados + ' lançamentos confirmados';
+    if (r.pulados) msg += '; ' + r.pulados + ' ainda sem conta';
+    aviso(msg);
+    invalidar();
+  }).catch(erro);
+}
+
+function abrirProximo(i) {
+  const it = S.inicio && S.inicio.proximos[i];
+  if (!it) return;
+  let h = topoFolha(it.descricao) +
+    '<p style="margin:0 0 4px;font-size:26px;font-weight:800">' + brl(it.valor) + '</p>' +
+    '<p style="margin:0;color:var(--suave)">' + (it.atrasado ? 'Venceu ' : 'Vence ') + esc(rotuloDia(it.data).toLowerCase()) +
+    (it.fatura ? '' : ' · ' + esc(nomePagamento(it))) + '</p><div class="botoes">';
+  if (it.fatura) {
+    h += '<a class="btn btn-primario" href="' + esc(urlClassico('cartoes')) + '" target="_top">Ver fatura no app clássico</a>';
+  } else {
+    h += '<button type="button" class="btn btn-primario" data-acao="pago">' + (it.valor > 0 ? 'Marcar como recebido' : 'Marcar como pago') + '</button>' +
+      '<button type="button" class="btn btn-secundario" data-acao="editar">Editar</button>';
+  }
+  h += '</div>';
+  abrirFolha(h, function (folha) {
+    const pago = folha.querySelector('[data-acao="pago"]');
+    if (pago) pago.onclick = function () {
+      pago.disabled = true;
+      run('appMarcarPago', it.id).then(function () {
+        fecharFolha(); aviso((it.valor > 0 ? 'Recebido: ' : 'Pago: ') + it.descricao); invalidar();
+      }).catch(function (e) { pago.disabled = false; erro(e); });
+    };
+    const ed = folha.querySelector('[data-acao="editar"]');
+    if (ed) ed.onclick = function () { fecharFolha(); abrirEdicao(it); };
+  });
+}
+
+/* ============================================================================
+ * Lançamentos do mês
+ * ========================================================================== */
+
+const FILTROS = [
+  { id: 'tudo', nome: 'Tudo', f: () => true },
+  { id: 'revisar', nome: 'A revisar', f: l => l.status === 'revisar' },
+  { id: 'apagar', nome: 'A pagar', f: l => l.status === 'pendente' || l.status === 'agendado' },
+  { id: 'saidas', nome: 'Saídas', f: l => l.valor < 0 && !l.transferencia },
+  { id: 'entradas', nome: 'Entradas', f: l => l.valor > 0 && !l.transferencia },
+  { id: 'transf', nome: 'Transferências', f: l => l.transferencia }
+];
+
+function barraMes(m, acao) {
+  return '<div class="mes-barra">' +
+    '<button type="button" class="icone-btn sem-borda" data-mes="' + acao + '" data-delta="-1" aria-label="Mês anterior">' + ICONE.esq + '</button>' +
+    '<h1>' + esc(nomeMes(m.ano, m.mes)) + '</h1>' +
+    '<button type="button" class="icone-btn sem-borda" data-mes="' + acao + '" data-delta="1" aria-label="Próximo mês">' + ICONE.dir + '</button></div>';
+}
+
+function telaLancamentos() {
+  const m = S.listaMes || mesAtual();
+  let h = barraMes(m, 'lista');
+  if (S.erro_lancamentos && !S.lista) return h + falhaTela(S.erro_lancamentos);
+  if (!S.lista) return h + esqueleto([62, 46, 36, 60, 60, 60, 60]);
+
+  const todos = S.lista;
+  let ent = 0, sai = 0;
+  todos.forEach(l => { if (l.transferencia) return; if (l.valor > 0) ent += l.valor; else sai += -l.valor; });
+  h += '<div class="totais-mes"><div><span>Entradas</span><span class="positivo">' + curto(ent, true) + '</span></div>' +
+    '<div><span>Saídas</span><span>' + curto(-sai) + '</span></div>' +
+    '<div><span>Resultado</span><span' + (ent - sai >= 0 ? ' class="positivo"' : '') + '>' + curto(ent - sai, true) + '</span></div></div>';
+
+  h += '<div class="busca">' + ICONE.busca + '<label for="busca" class="sr">Buscar</label>' +
+    '<input id="busca" type="search" placeholder="Buscar descrição, categoria, conta ou valor" value="' + esc(S.busca) + '"></div>';
+  h += '<div class="filtros" role="group" aria-label="Filtro">' + FILTROS.map(f => {
+    const n = todos.filter(f.f).length;
+    return '<button type="button" class="filtro" data-filtro="' + f.id + '" aria-pressed="' + (S.filtro === f.id) + '">' +
+      esc(f.nome) + (f.id !== 'tudo' && n ? ' · ' + n : '') + '</button>';
+  }).join('') + '</div>';
+  h += '<div id="lista-mes">' + listaFiltrada() + '</div>';
+  h += '<button type="button" class="fab" data-acao="novo" aria-label="Novo lançamento">' + ICONE.mais + '</button>';
+  return h;
+}
+
+function listaFiltrada() {
+  const filtro = FILTROS.find(f => f.id === S.filtro) || FILTROS[0];
+  const q = IA_norm(S.busca);
+  const itens = S.lista.filter(filtro.f).filter(l => {
+    if (!q) return true;
+    const alvo = IA_norm([l.descricao, nomeCategoria(l.categoria), nomePagamento(l), numBR(l.valor), l.quem].join(' '));
+    return alvo.indexOf(q) !== -1;
+  });
+  if (!itens.length) return '<div class="vazio" style="margin-top:16px">Nenhum lançamento' + (q || S.filtro !== 'tudo' ? ' com esse filtro' : ' neste mês') + '.</div>';
+  let h = '', dia = '';
+  itens.forEach(l => {
+    if (l.data !== dia) {
+      if (dia) h += '</div>';
+      dia = l.data;
+      h += '<div class="grupo-dia"><span>' + esc(rotuloDia(dia)) + '</span></div><div class="bloco lista">';
+    }
+    const cat = l.transferencia ? 'Transferência' : (nomeCategoria(l.categoria) || 'Sem categoria');
+    const marca = (l.status === 'revisar' || l.status === 'pendente' || l.status === 'agendado')
+      ? '<span class="marca-status ' + l.status + '" aria-hidden="true"></span>' : '';
+    const estado = (l.status !== 'confirmado' && l.status !== 'conciliado') ? STATUS_NOMES[l.status] + ' · ' : '';
+    h += '<button type="button" class="item" data-item="' + esc(l.id) + '">' +
+      '<span class="item-corpo"><span class="item-desc">' + marca + esc(l.descricao) + '</span>' +
+      '<span class="item-meta">' + esc(estado + cat + (nomePagamento(l) ? ' · ' + nomePagamento(l) : '') + (l.parcela ? ' · ' + l.parcela : '')) + '</span></span>' +
+      '<span class="item-valor' + (l.valor > 0 ? ' positivo' : '') + '">' + sinal(l.valor) + '</span></button>';
+  });
+  return h + '</div>';
+}
+
+function IA_norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+
+/* ============================================================================
+ * Painel
+ * ========================================================================== */
+
+function telaPainel() {
+  const m = S.painelMes || mesAtual();
+  let h = barraMes(m, 'painel');
+  if (S.erro_painel && !S.painel) return h + falhaTela(S.erro_painel);
+  const d = S.painel;
+  if (!d) return h + esqueleto([210, 70, 180, 90]);
+
+  h += '<section class="bloco bloco-pad" aria-labelledby="t-proj" style="display:flex;flex-direction:column;gap:10px">' +
+    '<div class="legenda-proj"><b id="t-proj">Saldo projetado nas contas</b>' +
+    (d.menor ? '<span>menor ponto: <b>dia ' + dataObj(d.menor.data).getDate() + '</b> · ' + brl(d.menor.saldo) + '</span>' : '') + '</div>' +
+    graficoProjecao(d) +
+    '<div class="legenda-proj"><span>Começou com <b>' + brl(d.saldo_inicio) + '</b></span><span>Termina com <b>' + brl(d.saldo_fim) + '</b></span></div></section>';
+
+  h += '<div class="totais-mes"><div><span>Receitas</span><span class="positivo">' + curto(d.resumo.receitas, true) + '</span></div>' +
+    '<div><span>Despesas</span><span>' + curto(-d.resumo.despesas) + '</span></div>' +
+    '<div><span>Resultado</span><span' + (d.resumo.resultado >= 0 ? ' class="positivo"' : '') + '>' + curto(d.resumo.resultado, true) + '</span></div></div>' +
+    '<p class="nota">Inclui o que ainda está previsto no mês. Transferências não contam.</p>';
+
+  h += '<div class="secao"><h2>Orçamentos</h2><a class="link-btn" href="' + esc(urlClassico('metas')) + '" target="_top">Ajustar</a></div>';
+  if (!d.orcamentos.length) {
+    h += '<div class="vazio">Nenhum orçamento para este mês.</div>';
+  } else {
+    h += '<div class="bloco" style="padding:2px 16px">' + d.orcamentos.map(o => {
+      const pct = Math.min(100, Math.max(0, o.percentual));
+      return '<div class="orc"><div class="orc-linha"><span style="font-weight:700">' + esc(o.nome) + '</span>' +
+        '<span><b>' + numBR(o.consumido, 0) + '</b> de ' + numBR(o.orcado, 0) + '</span></div>' +
+        '<div class="barra-trilho" role="img" aria-label="' + o.percentual + '% usado"><div class="barra-cheia' + (o.percentual >= 90 ? ' alerta' : '') + '" style="width:' + pct + '%"></div></div></div>';
+    }).join('') + '</div>';
+  }
+
+  if (d.quem.length) {
+    const total = d.quem.reduce((t, q) => t + q.total, 0) || 1;
+    h += '<div class="secao"><h2>Quem gastou</h2></div><div class="bloco bloco-pad">' +
+      '<div class="quem-barra" role="img" aria-label="Divisão dos gastos por pessoa">' + d.quem.map((q, i) =>
+        '<div style="width:' + (q.total / total * 100).toFixed(1) + '%;background:' + (q.sem_nome ? 'var(--linha)' : CORES_PESSOAS[i % CORES_PESSOAS.length]) + '"></div>').join('') + '</div>' +
+      '<div class="quem-lista">' + d.quem.map((q, i) =>
+        '<div><span style="display:flex;align-items:center"><span class="bolinha" style="background:' + (q.sem_nome ? 'var(--linha)' : CORES_PESSOAS[i % CORES_PESSOAS.length]) + '"></span>' +
+        esc(q.nome) + '</span><b>' + brl(q.total) + '</b></div>').join('') + '</div>' +
+      (d.quem.some(q => q.sem_nome) ? '<p class="nota" style="margin:10px 0 0">"Sem nome": lançamentos antigos ou recorrências, sem quem lançou.</p>' : '') + '</div>';
+  }
+
+  if (d.categorias.length) {
+    const max = d.categorias[0].total || 1;
+    h += '<div class="secao"><h2>Para onde foi</h2></div><div class="bloco" style="padding:2px 16px">' +
+      d.categorias.slice(0, 8).map(c =>
+        '<div class="cat-linha"><span style="font-weight:600">' + esc(c.nome) + '</span><b>' + brl(c.total) + '</b>' +
+        '<div class="barra-trilho"><div class="barra-cheia" style="width:' + (c.total / max * 100).toFixed(1) + '%"></div></div></div>').join('') + '</div>';
+  }
+  return h;
+}
+
+/** Linha do saldo dia a dia: sólida até hoje, tracejada depois. */
+function graficoProjecao(d) {
+  const pts = d.projecao || [];
+  if (pts.length < 2) return '<p class="nota" style="margin:0">Sem contas para projetar.</p>';
+  const W = 340, H = 140, topo = 12, base = 112;
+  let min = Math.min.apply(null, pts.map(p => p.saldo));
+  let max = Math.max.apply(null, pts.map(p => p.saldo));
+  if (max === min) { max += 1; min -= 1; }
+  const folga = (max - min) * 0.08; min -= folga; max += folga;
+  const x = i => (i / (pts.length - 1)) * W;
+  const y = v => topo + (max - v) / (max - min) * (base - topo);
+  const hoje = hojeISO();
+  let iHoje = pts.findIndex(p => p.data === hoje);
+  if (iHoje === -1) iHoje = pts[0].data > hoje ? -1 : pts.length - 1;
+  const coords = pts.map((p, i) => x(i).toFixed(1) + ',' + y(p.saldo).toFixed(1));
+  const passado = iHoje >= 0 ? coords.slice(0, iHoje + 1) : [];
+  const futuro = iHoje >= 0 ? coords.slice(iHoje) : coords;
+  const iMenor = d.menor ? pts.findIndex(p => p.data === d.menor.data) : -1;
+  let s = '<svg class="grafico" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Saldo projetado: começa em ' +
+    esc(brl(d.saldo_inicio)) + ', termina em ' + esc(brl(d.saldo_fim)) + (d.menor ? ', menor ponto ' + esc(brl(d.menor.saldo)) + ' no dia ' + dataObj(d.menor.data).getDate() : '') + '">';
+  s += '<line class="grade" x1="0" y1="' + base + '" x2="' + W + '" y2="' + base + '"/>';
+  if (min < 0 && max > 0) s += '<line class="zero" x1="0" y1="' + y(0).toFixed(1) + '" x2="' + W + '" y2="' + y(0).toFixed(1) + '"/>';
+  s += '<polygon class="area" points="0,' + base + ' ' + coords.join(' ') + ' ' + W + ',' + base + '"/>';
+  if (passado.length > 1) s += '<polyline class="passado" points="' + passado.join(' ') + '"/>';
+  if (futuro.length > 1) s += '<polyline class="futuro" points="' + futuro.join(' ') + '"/>';
+  if (iMenor >= 0) s += '<circle class="ponto-menor" cx="' + x(iMenor).toFixed(1) + '" cy="' + y(pts[iMenor].saldo).toFixed(1) + '" r="4.5"/>';
+  if (iHoje >= 0 && iHoje < pts.length && pts[iHoje].data === hoje) {
+    s += '<circle class="ponto-hoje" cx="' + x(iHoje).toFixed(1) + '" cy="' + y(pts[iHoje].saldo).toFixed(1) + '" r="4"/>';
+    const tx = Math.min(W - 26, Math.max(26, x(iHoje)));
+    s += '<text class="rotulo-forte" x="' + tx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">hoje</text>';
+  }
+  s += '<text x="0" y="' + (H - 6) + '">1</text><text x="' + W + '" y="' + (H - 6) + '" text-anchor="end">' + pts.length + '</text>';
+  s += '<text x="' + W + '" y="10" text-anchor="end">' + esc(curto(max - folga)) + '</text>';
+  return s + '</svg>';
+}
+
+/* ============================================================================
+ * Mais
+ * ========================================================================== */
+
+const TELAS_CLASSICO = [
+  ['lancamentos', 'Movimentações completas', 'Tabela com filtros, séries e transferências', '<path d="M4 7h16M4 12h16M4 17h10"/>'],
+  ['cartoes', 'Cartões e faturas', 'Faturas, pagar fatura, limites', '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>'],
+  ['visao-geral', 'Visão geral', 'Gráficos do mês e do ano', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
+  ['patrimonio', 'Patrimônio', 'Contas, investimentos e dívidas', '<path d="M4 10l8-6 8 6M6 10v8M10 10v8M14 10v8M18 10v8M4 20h16"/>'],
+  ['metas', 'Metas e orçamentos', '', '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'],
+  ['relatorios', 'Relatórios', '', '<path d="M5 19l5-6 4 3 5-8"/>'],
+  ['importar', 'Importar extrato', 'CSV do banco ou do cartão', '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'],
+  ['fechamento', 'Fechamento', 'Bater saldo com o banco', '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'],
+  ['cadastros', 'Cadastros', 'Contas, cartões, categorias, regras, recorrências', '<path d="M4 6h6l2 2h8v10H4z"/>'],
+  ['configuracoes', 'Configurações', 'Senha, Google Agenda, manutenção', '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>']
+];
+
+function urlClassico(tela) {
+  const base = S.boot && S.boot.url_app ? S.boot.url_app : '';
+  return base + '?v=classico' + (tela ? '&tela=' + encodeURIComponent(tela) : '');
+}
+
+function telaMais() {
+  const b = S.boot;
+  let h = '<header class="topo"><div class="topo-titulos"><h1 class="topo-titulo">Mais</h1></div></header>';
+  h += '<div class="bloco menu">' +
+    '<button type="button" data-acao="trocar-nome"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>' +
+    '<span>' + esc(b.quem || 'Definir seu nome') + '<small>' + esc(b.email || '') + ' · nome usado nos lançamentos</small></span>' + ICONE.seta + '</button>' +
+    (b.ia_configurada ? '' :
+      '<div style="padding:14px 16px;font-size:14px;color:var(--cobre)"><b>Lançamento por frase desligado.</b> Crie a propriedade ANTHROPIC_API_KEY no projeto FlowFinance (a mesma chave do bot).</div>') +
+    '</div>';
+  h += '<div class="secao"><h2>App clássico</h2></div><div class="bloco menu">' + TELAS_CLASSICO.map(t =>
+    '<a href="' + esc(urlClassico(t[0])) + '" target="_top"><svg viewBox="0 0 24 24" aria-hidden="true">' + t[3] + '</svg>' +
+    '<span>' + esc(t[1]) + (t[2] ? '<small>' + esc(t[2]) + '</small>' : '') + '</span>' + ICONE.seta + '</a>').join('') + '</div>';
+  h += '<div class="secao"><h2>Planilha e sessão</h2></div><div class="bloco menu">' +
+    (b.url_planilha ? '<a href="' + esc(b.url_planilha) + '" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg><span>Abrir a planilha</span>' + ICONE.seta + '</a>' : '') +
+    '<button type="button" data-acao="travar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Travar agora</span></button></div>';
+  return h;
+}
+
+function trocarNome() {
+  const b = S.boot;
+  const h = topoFolha('Seu nome nos lançamentos') +
+    '<p style="margin:0 0 12px;color:var(--suave);font-size:14px">Aparece em "quem" e no painel "Quem gastou". Use o mesmo nome do bot.</p>' +
+    '<div class="campos"><div class="campo"><label for="nome-novo">Nome</label><input id="nome-novo" type="text" value="' + esc(b.quem || '') + '" autocomplete="given-name"></div></div>' +
+    '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="salvar-nome">Salvar</button></div>';
+  abrirFolha(h, function (folha) {
+    const btn = folha.querySelector('[data-acao="salvar-nome"]');
+    btn.onclick = function () { salvarNome(folha.querySelector('#nome-novo').value, btn); };
+  });
+}
+
+function salvarNome(nome, btn) {
+  if (btn) btn.disabled = true;
+  run('appDefinirNome', nome).then(function (r) {
+    S.boot.quem = r.nome;
+    if (S.boot.nomes.indexOf(r.nome) === -1) S.boot.nomes.push(r.nome);
+    fecharFolha();
+    aviso('Pronto, ' + r.nome + '.');
+    desenhar();
+  }).catch(function (e) { if (btn) btn.disabled = false; erro(e); });
+}
+
+/* ============================================================================
+ * Folha (painel que sobe de baixo)
+ * ========================================================================== */
+
+let _folhaVoltar = null;
+function topoFolha(titulo) {
+  return '<div class="folha-pegador" aria-hidden="true"></div><div class="folha-topo">' +
+    '<button type="button" class="icone-btn sem-borda" data-acao="fechar-folha" aria-label="Fechar">' + ICONE.fechar + '</button>' +
+    '<h2 id="folha-titulo">' + esc(titulo) + '</h2></div>';
+}
+function abrirFolha(html, aoMontar) {
+  const folha = document.getElementById('folha');
+  _folhaVoltar = document.activeElement;
+  document.getElementById('aviso').hidden = true;
+  folha.innerHTML = html;
+  folha.hidden = false;
+  document.getElementById('folha-fundo').hidden = false;
+  document.body.style.overflow = 'hidden';
+  folha.querySelectorAll('[data-acao="fechar-folha"]').forEach(b => { b.onclick = fecharFolha; });
+  if (aoMontar) aoMontar(folha);
+  const foco = folha.querySelector('[autofocus]') || folha.querySelector('textarea, input, select, button:not([data-acao="fechar-folha"])');
+  if (foco) setTimeout(function () { foco.focus(); }, 30);
+}
+function fecharFolha() {
+  const folha = document.getElementById('folha');
+  if (folha.hidden) return;
+  folha.hidden = true;
+  folha.innerHTML = '';
+  document.getElementById('folha-fundo').hidden = true;
+  document.body.style.overflow = '';
+  if (_folhaVoltar && document.body.contains(_folhaVoltar)) _folhaVoltar.focus();
+}
+
+/* ============================================================================
+ * Lançar (novo) e editar
+ * ========================================================================== */
+
+/** Folha "Novo lançamento": frase -> IA -> campos -> Confirmar. */
+function abrirLancar(texto) {
+  const h = topoFolha('Novo lançamento') +
+    '<div class="frase"><label for="frase">Escreva como você falaria</label>' +
+    '<textarea id="frase" rows="2" enterkeyhint="go" placeholder="mercado nordestão 187,40 no crédito xp">' + esc(texto || '') + '</textarea>' +
+    '<div class="frase-acoes"><button type="button" class="btn btn-secundario btn-pequeno" data-acao="manual">Preencher à mão</button>' +
+    '<button type="button" class="btn btn-primario btn-pequeno" data-acao="entender">' + (S.boot.ia_configurada ? 'Entender' : 'Entender (IA desligada)') + '</button></div></div>' +
+    '<div id="area-form"></div>';
+  abrirFolha(h, function (folha) {
+    const ta = folha.querySelector('#frase');
+    const entender = function () { interpretar(folha, ta.value); };
+    folha.querySelector('[data-acao="entender"]').onclick = entender;
+    folha.querySelector('[data-acao="manual"]').onclick = function () {
+      montarForm(folha.querySelector('#area-form'), rascunhoVazio({ descricao: '' }), { novo: true });
+    };
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); entender(); } });
+    if (texto) entender();
+  });
+}
+
+function rascunhoVazio(extra) {
+  return Object.assign({
+    tipo: 'despesa', valor: null, descricao: '', data: hojeISO(), conta: '', cartao: '', conta_destino: '',
+    categoria: '', parcelas: 1, quem: S.boot.quem || '', status: 'confirmado'
+  }, extra || {});
+}
+
+function interpretar(folha, texto) {
+  const area = folha.querySelector('#area-form');
+  texto = String(texto || '').trim();
+  if (!texto) { folha.querySelector('#frase').focus(); return; }
+  area.innerHTML = '<div class="entendi">' + ICONE.brilho + 'Entendendo…</div>' +
+    '<div class="esq" style="height:54px;margin:8px 0"></div><div class="esq" style="height:54px;margin:8px 0"></div><div class="esq" style="height:54px;margin:8px 0"></div>';
+  run('appInterpretar', texto).then(function (r) {
+    if (!folha.isConnected || document.getElementById('folha').hidden) return;
+    if (r.tipo === 'nao_e_lancamento') {
+      area.innerHTML = '<div class="ia-msg">' + esc(r.resposta || 'Não entendi como lançamento. Tente "almoço 32,50 débito itaú".') + '</div>';
+      return;
+    }
+    const rasc = rascunhoVazio({
+      tipo: r.tipo, valor: r.valor, descricao: r.descricao, data: r.data, conta: r.conta, cartao: r.cartao,
+      conta_destino: r.conta_destino, categoria: r.categoria, parcelas: r.parcelas
+    });
+    montarForm(area, rasc, { novo: true, sugerida: r.categoria, porRegra: r.categoria_por_regra, duvidas: r.duvidas, titulo: true, texto: texto });
+  }).catch(function (e) {
+    area.innerHTML = '<div class="ia-msg">' + esc(e.message || e) + '</div>' +
+      '<div class="botoes"><button type="button" class="btn btn-secundario" data-acao="manual2">Preencher à mão</button></div>';
+    area.querySelector('[data-acao="manual2"]').onclick = function () { montarForm(area, rascunhoVazio({ descricao: texto.slice(0, 40) }), { novo: true }); };
+  });
+}
+
+/** Editar um lançamento que já existe (da fila, da lista ou de "A pagar"). */
+function abrirEdicao(it) {
+  const titulo = it.status === 'revisar' ? 'Revisar lançamento' : 'Editar lançamento';
+  if (it.transferencia) {
+    abrirFolha(topoFolha('Transferência') +
+      '<p style="margin:0 0 8px;font-size:22px;font-weight:800">' + brl(it.valor) + '</p>' +
+      '<p style="color:var(--suave);margin:0">' + esc(it.descricao) + ' · ' + esc(nomePagamento(it)) + ' · ' + esc(rotuloDia(it.data)) + '</p>' +
+      '<p style="color:var(--suave);font-size:14px">Transferências mexem em duas contas ao mesmo tempo; para mudar, use Movimentações no app clássico.</p>' +
+      '<div class="botoes"><a class="btn btn-secundario" href="' + esc(urlClassico('lancamentos')) + '" target="_top">Abrir Movimentações</a>' +
+      '<button type="button" class="btn btn-perigo" data-acao="excluir">Excluir as duas pernas</button></div>',
+      function (folha) { ligarExcluir(folha, it); });
+    return;
+  }
+  const rasc = {
+    id: it.id, tipo: it.valor > 0 ? 'receita' : 'despesa', valor: Math.abs(it.valor), descricao: it.descricao,
+    data: it.data, conta: it.conta, cartao: it.cartao, conta_destino: '', categoria: it.categoria,
+    parcelas: 1, quem: it.quem || '', status: it.status, observacao: it.observacao, serie: it.serie, parcela: it.parcela
+  };
+  abrirFolha(topoFolha(titulo) + '<div id="area-form"></div>', function (folha) {
+    montarForm(folha.querySelector('#area-form'), rasc, { novo: false, sugerida: it.status === 'revisar' ? it.categoria : undefined });
+  });
+}
+
+function opcoesPagamento(sel) {
+  const b = S.boot;
+  let h = '<option value="">Escolha…</option>';
+  if (b.cartoes.length) h += '<optgroup label="Cartões">' + b.cartoes.map(c => '<option value="k:' + esc(c.id) + '"' + (sel === 'k:' + c.id ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</optgroup>';
+  const contas = b.contas.filter(c => c.tipo !== 'emprestimo');
+  if (contas.length) h += '<optgroup label="Contas">' + contas.map(c => '<option value="c:' + esc(c.id) + '"' + (sel === 'c:' + c.id ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</optgroup>';
+  return h;
+}
+function opcoesContas(sel, vazio) {
+  return '<option value="">' + esc(vazio || 'Escolha…') + '</option>' + S.boot.contas.filter(c => c.tipo !== 'emprestimo')
+    .map(c => '<option value="' + esc(c.id) + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('');
+}
+function opcoesCategorias(tipo, sel) {
+  const cats = S.boot.categorias.filter(c => c.tipo === tipo);
+  const pais = cats.filter(c => !c.pai);
+  let h = '<option value="">Sem categoria</option>';
+  pais.forEach(p => {
+    const filhas = cats.filter(c => c.pai === p.id);
+    if (!filhas.length) { h += '<option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(p.nome) + '</option>'; return; }
+    h += '<optgroup label="' + esc(p.nome) + '"><option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(p.nome) + ' (geral)</option>' +
+      filhas.map(f => '<option value="' + esc(f.id) + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') + '</optgroup>';
+  });
+  // Filhas cujo pai não está na lista (cadastro incompleto)
+  cats.filter(c => c.pai && !pais.some(p => p.id === c.pai)).forEach(c => {
+    h += '<option value="' + esc(c.id) + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(c.caminho) + '</option>';
+  });
+  return h;
+}
+function opcoesQuem(sel) {
+  const nomes = S.boot.nomes.slice();
+  if (sel && nomes.indexOf(sel) === -1) nomes.push(sel);
+  return (sel ? '' : '<option value="">—</option>') + nomes.map(n => '<option' + (n === sel ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+}
+
+/**
+ * Formulário de lançamento. `rasc` é o estado; `ctx`:
+ *   novo, sugerida (categoria sugerida pela IA/regra), porRegra, duvidas, titulo, texto
+ */
+function montarForm(area, rasc, ctx) {
+  const st = Object.assign({}, rasc);
+
+  function html() {
+    const tipos = ctx.novo ? ['despesa', 'receita', 'transferencia'] : ['despesa', 'receita'];
+    const nomesTipo = { despesa: 'Despesa', receita: 'Receita', transferencia: 'Transferência' };
+    let h = ctx.titulo ? '<div class="entendi">' + ICONE.brilho + 'O que eu entendi</div>' : '<div style="height:4px"></div>';
+    h += '<div class="segmento" role="group" aria-label="Tipo" style="--n:' + tipos.length + '">' + tipos.map(t =>
+      '<button type="button" data-tipo="' + t + '" aria-pressed="' + (st.tipo === t) + '">' + nomesTipo[t] + '</button>').join('') + '</div>';
+    h += '<div class="campos">';
+    h += '<div class="campo"><label for="f-valor">Valor</label><input id="f-valor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="' + (st.valor ? numBR(st.valor) : '') + '"></div>';
+    h += '<div class="campo"><label for="f-desc">' + (st.tipo === 'transferencia' ? 'Descrição' : 'Local') + '</label><input id="f-desc" type="text" maxlength="120" value="' + esc(st.descricao) + '"></div>';
+    if (st.tipo === 'transferencia') {
+      h += '<div class="campo"><label for="f-de">De</label><select id="f-de">' + opcoesContas(st.conta) + '</select></div>';
+      h += '<div class="campo"><label for="f-para">Para</label><select id="f-para">' + opcoesContas(st.conta_destino) + '</select></div>';
+    } else {
+      const pagAtual = st.cartao ? 'k:' + st.cartao : (st.conta ? 'c:' + st.conta : '');
+      h += '<div class="campo"><label for="f-pag">' + (st.tipo === 'receita' ? 'Conta' : 'Pagamento') + '</label><select id="f-pag">' + opcoesPagamento(pagAtual) + '</select>' +
+        dicaPagamento() + '</div>';
+      h += '<div class="campo"><label for="f-cat">Categoria</label><select id="f-cat">' + opcoesCategorias(st.tipo, st.categoria) + '</select>' + dicaCategoria() + '</div>';
+    }
+    h += '<div class="campo"><label for="f-data">Data</label><input id="f-data" type="date" value="' + esc(st.data) + '"></div>';
+    if (ctx.novo && st.tipo === 'despesa' && st.cartao) {
+      const v = Number(st.valor) || 0;
+      let op = '';
+      for (let n = 1; n <= 24; n++) op += '<option value="' + n + '"' + (Number(st.parcelas) === n ? ' selected' : '') + '>' + (n === 1 ? 'À vista' : n + 'x' + (v ? ' de ' + brl(v / n) : '')) + '</option>';
+      h += '<div class="campo"><label for="f-parc">Parcelas</label><select id="f-parc">' + op + '</select></div>';
+    }
+    h += '<div class="campo"><label for="f-quem">Quem</label><select id="f-quem">' + opcoesQuem(st.quem) + '</select></div>';
+    if (!ctx.novo && st.status !== 'revisar') {
+      h += '<div class="campo"><label for="f-status">Situação</label><select id="f-status">' +
+        ['pendente', 'agendado', 'confirmado', 'conciliado', 'revisar'].map(s => '<option value="' + s + '"' + (st.status === s ? ' selected' : '') + '>' + STATUS_NOMES[s] + '</option>').join('') + '</select></div>';
+    }
+    h += '</div>';
+    (ctx.duvidas || []).forEach(dv => { h += '<div class="duvida">' + esc(dv.pergunta) + '</div>'; });
+    if (st.serie || st.parcela) h += '<p class="obs">' + (st.parcela ? 'Parcela ' + esc(st.parcela) + '. ' : 'Faz parte de uma recorrência. ') + 'A mudança vale só para este; para mudar a série, use o app clássico.</p>';
+    if (st.observacao) h += '<p class="obs">' + esc(st.observacao) + '</p>';
+    h += '<div class="botoes">' + botoes() + '</div>';
+    return h;
+  }
+
+  function dicaPagamento() {
+    if (st.tipo === 'despesa' && st.cartao) {
+      const c = competenciaFatura(st.cartao, st.data);
+      if (c) return '<span class="dica">fatura de ' + MESES[c.mes - 1] + (c.ano !== partesData(hojeISO()).a ? ' ' + c.ano : '') + ' · vence dia ' + c.venc + '</span>';
+    }
+    if (!st.cartao && !st.conta) return '<span class="dica falta">escolha onde saiu ou entrou</span>';
+    return '';
+  }
+  function dicaCategoria() {
+    if (!st.categoria) return '';
+    if (ctx.porRegra && st.categoria === ctx.sugerida) return '<span class="dica">pela sua regra</span>';
+    if (ctx.sugerida !== undefined && ctx.sugerida !== null && st.categoria !== ctx.sugerida && st.descricao) return '<span class="dica">vou lembrar para "' + esc(st.descricao.split(/\s+/).slice(0, 3).join(' ')) + '"</span>';
+    return '';
+  }
+  function botoes() {
+    const v = st.valor ? ' · ' + brl(st.valor) : '';
+    if (ctx.novo) {
+      return '<button type="button" class="btn btn-primario" data-salvar="confirmado">Confirmar' + v + '</button>' +
+        (st.tipo === 'transferencia' ? '' : '<button type="button" class="btn btn-secundario" data-salvar="revisar">Salvar para revisar depois</button>');
+    }
+    if (st.status === 'revisar') {
+      return '<button type="button" class="btn btn-primario" data-salvar="confirmado">Confirmar' + v + '</button>' +
+        '<button type="button" class="btn btn-secundario" data-salvar="revisar">Salvar sem confirmar</button>' +
+        '<button type="button" class="btn btn-perigo" data-acao="excluir">Excluir</button>';
+    }
+    return '<button type="button" class="btn btn-primario" data-salvar="manter">Salvar</button>' +
+      '<button type="button" class="btn btn-perigo" data-acao="excluir">Excluir</button>';
+  }
+
+  // Lê os campos para o estado (sem redesenhar)
+  function ler() {
+    const q = id => area.querySelector('#' + id);
+    if (q('f-valor')) st.valor = textoParaNumero(q('f-valor').value) || null;
+    if (q('f-desc')) st.descricao = q('f-desc').value.trim();
+    if (q('f-data')) st.data = q('f-data').value || hojeISO();
+    if (q('f-quem')) st.quem = q('f-quem').value;
+    if (q('f-parc')) st.parcelas = Number(q('f-parc').value) || 1;
+    if (q('f-status')) st.status = q('f-status').value;
+    if (st.tipo === 'transferencia') {
+      if (q('f-de')) st.conta = q('f-de').value;
+      if (q('f-para')) st.conta_destino = q('f-para').value;
+      st.cartao = '';
+    } else {
+      if (q('f-pag')) {
+        const v = q('f-pag').value;
+        st.cartao = v.indexOf('k:') === 0 ? v.slice(2) : '';
+        st.conta = v.indexOf('c:') === 0 ? v.slice(2) : '';
+      }
+      if (q('f-cat')) st.categoria = q('f-cat').value;
+    }
+  }
+
+  function redesenhar(focoId) {
+    area.innerHTML = html();
+    ligar();
+    if (focoId) { const el = area.querySelector('#' + focoId); if (el) el.focus(); }
+  }
+
+  function ligar() {
+    area.querySelectorAll('[data-tipo]').forEach(b => {
+      b.onclick = function () {
+        ler();
+        const novo = b.dataset.tipo;
+        if (novo === st.tipo) return;
+        if (novo === 'transferencia') { st.cartao = ''; st.categoria = ''; st.parcelas = 1; }
+        else if (st.tipo === 'transferencia') { st.conta_destino = ''; }
+        const cat = acharCategoria(st.categoria);
+        if (cat && cat.tipo !== novo) st.categoria = '';
+        if (novo !== 'despesa') st.parcelas = 1;
+        st.tipo = novo;
+        redesenhar();
+      };
+    });
+    ['f-pag', 'f-cat', 'f-data'].forEach(id => {
+      const el = area.querySelector('#' + id);
+      if (el) el.onchange = function () { ler(); redesenhar(id); };
+    });
+    const valor = area.querySelector('#f-valor');
+    if (valor) valor.onchange = function () { ler(); redesenhar(); };
+    area.querySelectorAll('[data-salvar]').forEach(b => { b.onclick = function () { salvar(b.dataset.salvar, b); }; });
+    const ex = area.querySelector('[data-acao="excluir"]');
+    if (ex) ligarExcluir(area, { id: st.id, descricao: st.descricao });
+  }
+
+  function salvar(modo, btn) {
+    ler();
+    if (!(st.valor > 0)) { aviso('Informe o valor.', { erro: true }); area.querySelector('#f-valor').focus(); return; }
+    if (st.tipo === 'transferencia') {
+      if (!st.conta || !st.conta_destino) { aviso('Escolha as duas contas.', { erro: true }); return; }
+      if (st.conta === st.conta_destino) { aviso('Origem e destino são a mesma conta.', { erro: true }); return; }
+    } else if (!st.conta && !st.cartao) {
+      aviso('Escolha a conta ou o cartão.', { erro: true }); area.querySelector('#f-pag').focus(); return;
+    }
+    const dados = {
+      id: st.id, tipo: st.tipo, descricao: st.descricao, valor: st.valor, data: st.data,
+      conta: st.conta, cartao: st.cartao, conta_destino: st.conta_destino, categoria: st.categoria,
+      quem: st.quem, parcelas: st.parcelas,
+      status: modo === 'manter' ? st.status : modo
+    };
+    if (ctx.novo && ctx.texto) dados.observacao = 'App: ' + ctx.texto.slice(0, 200);
+    const opcoes = {};
+    if (ctx.sugerida !== undefined && ctx.sugerida !== null) opcoes.categoria_sugerida = ctx.sugerida;
+    area.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    btn.textContent = 'Salvando…';
+    run('appSalvar', dados, opcoes).then(function (r) {
+      fecharFolha();
+      let msg;
+      if (ctx.novo) msg = (modo === 'revisar' ? 'Salvo para revisar' : (r.quantidade > 1 ? 'Lançado em ' + r.quantidade + ' parcelas' : 'Lançado'));
+      else msg = modo === 'confirmado' ? 'Confirmado' : 'Salvo';
+      if (r.aprendido) msg += '. ' + r.aprendido;
+      const ids = r.ids || [];
+      aviso(msg, ctx.novo && ids.length ? {
+        acao: 'Desfazer', aoClicar: function () { run('appDesfazer', ids).then(function () { aviso('Desfeito.'); invalidar(); }).catch(erro); }
+      } : {});
+      invalidar();
+    }).catch(function (e) {
+      erro(e);
+      area.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      redesenhar();
+    });
+  }
+
+  redesenhar();
+  if (!ctx.titulo && ctx.novo) { const v = area.querySelector('#f-valor'); if (v) v.focus(); }
+}
+
+/** Excluir com dois toques (sem caixa de diálogo do navegador). */
+function ligarExcluir(raiz, it) {
+  const b = raiz.querySelector('[data-acao="excluir"]');
+  if (!b) return;
+  let armado = false;
+  b.onclick = function () {
+    if (!armado) {
+      armado = true;
+      b.dataset.texto = b.textContent;
+      b.textContent = 'Toque de novo para excluir';
+      setTimeout(function () { if (armado && b.isConnected) { armado = false; b.textContent = b.dataset.texto; } }, 4000);
+      return;
+    }
+    b.disabled = true;
+    run('appExcluir', it.id).then(function () {
+      fecharFolha(); aviso('Excluído: ' + (it.descricao || 'lançamento')); invalidar();
+    }).catch(function (e) { b.disabled = false; erro(e); });
+  };
+}
+
+/* ============================================================================
+ * Eventos da tela
+ * ========================================================================== */
+
+function ligarTela() {
+  const tela = document.getElementById('tela');
+  tela.querySelectorAll('[data-acao="atualizar"]').forEach(b => { b.onclick = function () { carregarAba(true); }; });
+  const t = tela.querySelector('[data-acao="saldo"]');
+  if (t) t.onclick = function () { S.saldoAberto = !S.saldoAberto; desenhar(); };
+  const todos = tela.querySelector('[data-acao="confirmar-todos"]');
+  if (todos) todos.onclick = confirmarTodos;
+  tela.querySelectorAll('[data-confirmar]').forEach(b => { b.onclick = function () { confirmarItem(b.dataset.confirmar); }; });
+  tela.querySelectorAll('[data-editar]').forEach(b => {
+    b.onclick = function () {
+      const it = S.inicio && (S.inicio.revisar || []).find(r => r.id === b.dataset.editar);
+      if (it) abrirEdicao(it);
+    };
+  });
+  tela.querySelectorAll('[data-proximo]').forEach(b => { b.onclick = function () { abrirProximo(Number(b.dataset.proximo)); }; });
+  tela.querySelectorAll('[data-nome]').forEach(b => { b.onclick = function () { salvarNome(b.dataset.nome, b); }; });
+  const outro = tela.querySelector('[data-acao="outro-nome"]');
+  if (outro) outro.onclick = trocarNome;
+
+  // Lançamentos
+  tela.querySelectorAll('[data-mes]').forEach(b => {
+    b.onclick = function () {
+      const delta = Number(b.dataset.delta);
+      if (b.dataset.mes === 'lista') { S.listaMes = mudarMes(S.listaMes || mesAtual(), delta); S.lista = null; }
+      else { S.painelMes = mudarMes(S.painelMes || mesAtual(), delta); S.painel = null; }
+      desenhar(); carregarAba(true);
+    };
+  });
+  const busca = tela.querySelector('#busca');
+  if (busca) busca.oninput = function () {
+    S.busca = busca.value;
+    tela.querySelector('#lista-mes').innerHTML = listaFiltrada();
+    ligarItens(tela);
+  };
+  tela.querySelectorAll('[data-filtro]').forEach(b => {
+    b.onclick = function () { S.filtro = b.dataset.filtro; desenhar(); };
+  });
+  ligarItens(tela);
+  const novo = tela.querySelector('[data-acao="novo"]');
+  if (novo) novo.onclick = function () { abrirLancar(''); };
+
+  // Mais
+  const nome = tela.querySelector('[data-acao="trocar-nome"]');
+  if (nome) nome.onclick = trocarNome;
+  const travar = tela.querySelector('[data-acao="travar"]');
+  if (travar) travar.onclick = function () { Trava.travar(); };
+}
+
+function ligarItens(tela) {
+  tela.querySelectorAll('[data-item]').forEach(b => {
+    b.onclick = function () {
+      const it = (S.lista || []).find(l => l.id === b.dataset.item);
+      if (it) abrirEdicao(it);
+    };
+  });
+}
+
+/* ============================================================================
+ * Trava por senha (mesmas regras e mesma sessão do app clássico)
+ * ========================================================================== */
+
+const Trava = (function () {
+  const CHAVE = 'ff_auth_session_v1';
+  let email = '', minutos = 15, ultimo = Date.now(), salvoEm = 0, aberta = false;
+
+  function salvar() {
+    try { localStorage.setItem(CHAVE, JSON.stringify({ email: email, ts: Date.now() })); } catch (e) {}
+    salvoEm = Date.now();
+  }
+  function ler() { try { return JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch (e) { return null; } }
+  function limpar() { try { localStorage.removeItem(CHAVE); } catch (e) {} }
+
+  function mostrar(html) {
+    document.getElementById('trava-corpo').innerHTML = html;
+    document.getElementById('trava').hidden = false;
+    const i = document.querySelector('#trava input');
+    if (i) setTimeout(function () { i.focus(); }, 30);
+  }
+  function esconder() { document.getElementById('trava').hidden = true; }
+
+  function formSenha(titulo, texto, botao, acao) {
+    mostrar('<p><b>' + esc(titulo) + '</b></p><p>' + texto + '</p>' +
+      '<form id="trava-form"><label for="trava-senha">Senha do FlowFinance</label>' +
+      '<input id="trava-senha" type="password" autocomplete="current-password" required>' +
+      (acao === 'setup' ? '<label for="trava-senha2" style="margin-top:12px">Repita a senha</label><input id="trava-senha2" type="password" autocomplete="new-password" required>' : '') +
+      '<p class="erro" id="trava-erro" role="alert"></p>' +
+      '<button type="submit" class="btn btn-primario">' + esc(botao) + '</button></form>');
+    document.getElementById('trava-form').onsubmit = function (e) {
+      e.preventDefault();
+      const s = document.getElementById('trava-senha').value;
+      const er = document.getElementById('trava-erro');
+      const b = e.target.querySelector('button');
+      if (acao === 'setup' && s !== document.getElementById('trava-senha2').value) { er.textContent = 'As senhas não coincidem.'; return; }
+      b.disabled = true;
+      run(acao === 'setup' ? 'setupFirstUser' : 'login', s).then(function (r) {
+        if (!r.ok) { er.textContent = r.error || 'Não deu certo.'; b.disabled = false; return; }
+        liberar();
+      }).catch(function (x) { er.textContent = x.message || String(x); b.disabled = false; });
+    };
+  }
+
+  let aoLiberar = null;
+  function liberar() {
+    aberta = true; ultimo = Date.now(); salvar(); esconder();
+    if (aoLiberar) { const f = aoLiberar; aoLiberar = null; f(); }
+  }
+
+  function travar() {
+    aberta = false; limpar();
+    formSenha('Travado', 'Conta Google: ' + esc(email), 'Entrar', 'login');
+  }
+
+  function iniciar(callback) {
+    aoLiberar = callback;
+    mostrar('<p>Carregando…</p>');
+    run('getAuthStatus').then(function (st) {
+      email = st.email || ''; minutos = st.timeout_minutes || 15;
+      if (st.setup_needed) { formSenha('Primeiro acesso', 'Crie uma senha para ' + esc(email) + '.', 'Criar senha', 'setup'); return; }
+      if (!st.is_authorized) { mostrar('<p><b>Acesso negado</b></p><p>A conta ' + esc(email) + ' não está autorizada.</p>'); return; }
+      const s = ler();
+      if (s && s.email === email && (Date.now() - (s.ts || 0)) / 60000 < minutos) { liberar(); return; }
+      formSenha('Entrar', 'Conta Google: ' + esc(email), 'Entrar', 'login');
+    }).catch(function (e) { mostrar('<p class="erro">Erro: ' + esc(e.message || e) + '</p>'); });
+
+    ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, function () {
+      if (!aberta) return;
+      ultimo = Date.now();
+      if (Date.now() - salvoEm > 30000) salvar(); // mantém a sessão enquanto usa
+    }, { passive: true, capture: true }));
+    setInterval(function () {
+      if (aberta && (Date.now() - ultimo) / 60000 >= minutos) travar();
+    }, 20000);
+  }
+
+  return { iniciar: iniciar, travar: travar };
+})();
+
+/* ============================================================================
+ * Início do app
+ * ========================================================================== */
+
+function iniciarApp() {
+  document.querySelectorAll('.aba').forEach(b => { b.onclick = function () { fecharFolha(); mostrarAba(b.dataset.aba); }; });
+  document.getElementById('folha-fundo').onclick = fecharFolha;
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharFolha(); });
+  document.getElementById('rapido').onsubmit = function (e) {
+    e.preventDefault();
+    const i = document.getElementById('rapido-texto');
+    const t = i.value.trim();
+    i.value = '';
+    i.blur();
+    abrirLancar(t);
+  };
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && S.boot) carregarAba(false);
+  });
+
+  document.getElementById('tela').innerHTML = esqueleto([60, 150, 76, 76]);
+  Trava.iniciar(function () {
+    run('appBoot').then(function (b) {
+      S.boot = b;
+      mostrarAba('inicio');
+    }).catch(function (e) {
+      document.getElementById('tela').innerHTML = falhaTela(e.message || e);
+      const bt = document.querySelector('[data-acao="atualizar"]');
+      if (bt) bt.onclick = function () { location.reload(); };
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', iniciarApp);
+</script>
