@@ -188,21 +188,38 @@ function appProjecao_(ano, mes) {
   const view = getMovimentacoesView(ano, mes,
     contas.map(c => String(c.id)), APP_STATUS_, cartoes.map(c => String(c.id)));
 
-  const porDia = {};
+  const contaPorId = {};
+  contas.forEach(c => { contaPorId[String(c.id)] = c; });
+  // Total das contas e, separado, cada conta (para o filtro por conta na tela de lançamentos)
+  const porDia = {}, porDiaConta = {};
   (view.lancamentos_contas || []).forEach(l => {
     if (l._virtual && !l._fatura_cartao_id) return; // "restante de orçamento" não entra
-    porDia[l.data] = (porDia[l.data] || 0) + (Number(l.valor) || 0);
+    if (!l._virtual && Utils.antesDoMarco(l, contaPorId[String(l.conta)])) return; // já dentro do saldo inicial
+    const v = Number(l.valor) || 0;
+    porDia[l.data] = (porDia[l.data] || 0) + v;
+    const k = String(l.conta || '');
+    if (!k) return;
+    porDiaConta[k] = porDiaConta[k] || {};
+    porDiaConta[k][l.data] = (porDiaConta[k][l.data] || 0) + v;
   });
+  const anterior = view.saldo_anterior_por_conta || {};
   let saldo = Number(view.saldo_anterior_contas) || 0;
   const inicio = saldo;
   const pontos = [];
+  const porConta = {};
+  const corrente = {};
+  contas.forEach(c => { const k = String(c.id); corrente[k] = Number(anterior[k]) || 0; porConta[k] = {}; });
   let d = r.start;
   while (d <= r.end) {
     saldo += porDia[d] || 0;
     pontos.push({ data: d, saldo: appArred_(saldo) });
+    Object.keys(corrente).forEach(k => {
+      corrente[k] += (porDiaConta[k] && porDiaConta[k][d]) || 0;
+      porConta[k][d] = appArred_(corrente[k]);
+    });
     d = appDiaMais_(d, 1);
   }
-  return { pontos: pontos, inicio: appArred_(inicio), fim: pontos.length ? pontos[pontos.length - 1].saldo : inicio };
+  return { pontos: pontos, porConta: porConta, inicio: appArred_(inicio), fim: pontos.length ? pontos[pontos.length - 1].saldo : inicio };
 }
 
 function appInicio() {

@@ -384,8 +384,11 @@ function appExcluirLote(ids) {
 function appMovimentos(ano, mes) {
   const itens = appListar(ano, mes);
   const saldos = {};
+  let porConta = {};
   try {
-    appProjecao_(Number(ano), Number(mes)).pontos.forEach(p => { saldos[p.data] = p.saldo; });
+    const proj = appProjecao_(Number(ano), Number(mes));
+    proj.pontos.forEach(p => { saldos[p.data] = p.saldo; });
+    porConta = proj.porConta || {};
   } catch (e) { /* sem contas: sem coluna de saldo */ }
-  return { itens: itens, saldos: saldos };
+  return { itens: itens, saldos: saldos, saldos_por_conta: porConta };
 }
