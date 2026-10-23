@@ -204,7 +204,7 @@ function carregarAba(forcar) {
     if (!S.listaMes) S.listaMes = mesAtual();
     if (forcar || !S.lista || velho) {
       const m = S.listaMes;
-      p = run('appMovimentos', m.ano, m.mes).then(d => { if (S.listaMes === m) { S.lista = d.itens; S.saldosDia = d.saldos; } });
+      p = run('appMovimentos', m.ano, m.mes).then(d => { if (S.listaMes === m) { S.lista = d.itens; S.saldosDia = d.saldos; S.saldosConta = d.saldos_por_conta || {}; } });
     }
   } else if (aba === 'lancamentos') {
     if (!S.listaMes) S.listaMes = mesAtual();

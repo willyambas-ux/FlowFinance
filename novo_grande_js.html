@@ -348,12 +348,16 @@ function corpoMovG() {
   let soma = 0;
   itens.forEach(l => { soma += l.valor; });
   let ultimoDia = '';
+  // Com uma conta filtrada, o saldo é só dela (bate com o extrato); com cartão, não há saldo de caixa
+  const contaFiltro = S.fConta && S.fConta.indexOf('c:') === 0 ? S.fConta.slice(2) : '';
+  const saldosUsar = contaFiltro ? (S.saldosConta || {})[contaFiltro] : (S.fConta ? null : S.saldosDia);
+  const rotuloSaldo = contaFiltro ? 'Saldo da conta' : 'Saldo contas';
   const linhas = itens.map(l => {
     const c = acharCategoria(l.categoria);
     const catTxt = l.transferencia ? 'Transferência' : (c ? c.caminho : '');
     // Saldo das contas no fim do dia, só na primeira linha de cada dia
     let saldo = '';
-    if (l.data !== ultimoDia) { ultimoDia = l.data; if (S.saldosDia && S.saldosDia[l.data] !== undefined) saldo = numBR(S.saldosDia[l.data]); }
+    if (l.data !== ultimoDia) { ultimoDia = l.data; if (saldosUsar && saldosUsar[l.data] !== undefined) saldo = numBR(saldosUsar[l.data]); }
     return '<tr data-mov="' + esc(l.id) + '" class="' + (S.sel.has(l.id) ? 'sel' : '') + '" tabindex="0">' +
       '<td class="g-col-check"><input type="checkbox" data-sel="' + esc(l.id) + '" aria-label="Selecionar ' + esc(l.descricao) + '"' + (S.sel.has(l.id) ? ' checked' : '') + '></td>' +
       '<td class="g-suave">' + esc(dataCurta(l.data)) + '</td>' +
@@ -368,10 +372,10 @@ function corpoMovG() {
   return barraLote('mov', itens) +
     '<div class="g-cartao g-sem-pad"><table class="g-tabela g-selecionavel"><thead><tr>' +
     '<th class="g-col-check"><input type="checkbox" data-sel-todos aria-label="Selecionar todos"' + (S.sel.size === itens.length ? ' checked' : '') + '></th>' +
-    '<th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta ou cartão</th><th>Quem</th><th>Situação</th><th class="num">Valor</th><th class="num">Saldo contas</th></tr></thead><tbody>' +
+    '<th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta ou cartão</th><th>Quem</th><th>Situação</th><th class="num">Valor</th><th class="num">' + rotuloSaldo + '</th></tr></thead><tbody>' +
     linhas + '</tbody><tfoot><tr><td></td><td colspan="6" class="g-suave">' + itens.length + (itens.length === 1 ? ' lançamento' : ' lançamentos') + '</td>' +
     '<td class="num"><b>' + sinal(soma) + '</b></td><td></td></tr></tfoot></table></div>' +
-    '<p class="nota" style="margin:10px 0 0">Saldo das contas no fim de cada dia, incluindo o previsto. Compras no cartão entram no saldo quando a fatura é paga.</p>';
+    '<p class="nota" style="margin:10px 0 0">' + (contaFiltro ? 'Saldo desta conta no fim de cada dia, incluindo o previsto. Deve bater com o extrato do banco.' : S.fConta ? 'Compras no cartão entram no saldo da conta quando a fatura é paga.' : 'Saldo de todas as contas somadas no fim de cada dia, incluindo o previsto. Filtre uma conta para ver o saldo só dela.') + '</p>';
 }
 
 /** Barra que aparece quando há linhas selecionadas. */
