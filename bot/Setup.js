@@ -168,3 +168,8 @@ function infoWebhook() {
 function removerWebhook() {
   console.log(JSON.stringify(Telegram.chamar('deleteWebhook', { drop_pending_updates: true })));
 }
+
+/** Testa se o Google consegue abrir os portais da NFC-e (RN e PE). Veja o resultado no registro de execução. */
+function testarSefaz() {
+  console.log(Sefaz.diagnosticar(['24', '26']));
+}

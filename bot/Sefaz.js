@@ -122,23 +122,85 @@ const Sefaz = (function () {
     return m ? m[1] : '';
   }
 
+  const CABECALHOS = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml',
+    'Accept-Language': 'pt-BR,pt;q=0.9'
+  };
+
+  /** Uma tentativa de download sem seguir redirecionamento. Nunca lança erro. */
+  function tentar_(url) {
+    try {
+      const resp = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        followRedirects: false,
+        validateHttpsCertificates: false,
+        headers: CABECALHOS
+      });
+      const h = resp.getHeaders() || {};
+      return { url: url, status: resp.getResponseCode(), local: h.Location || h.location || '', resp: resp };
+    } catch (e) {
+      return { url: url, erro: String(e && e.message ? e.message : e).slice(0, 200) };
+    }
+  }
+
+  function trocarProtocolo_(url) {
+    return /^https:/i.test(url) ? url.replace(/^https:/i, 'http:') : url.replace(/^http:/i, 'https:');
+  }
+
+  /**
+   * Segue os redirecionamentos à mão. Se o https falhar (SSL antigo do portal),
+   * tenta o mesmo endereço em http, e vice-versa.
+   */
+  function baixar_(url) {
+    const log = [];
+    let atual = url;
+    const vistos = {};
+    for (let passo = 0; passo < 6; passo++) {
+      let t = tentar_(atual);
+      log.push(resumo_(t));
+      if (t.erro) {
+        const alt = trocarProtocolo_(atual);
+        if (vistos[alt]) break;
+        vistos[atual] = true;
+        t = tentar_(alt);
+        log.push(resumo_(t));
+        if (t.erro) break;
+        atual = alt;
+      }
+      vistos[atual] = true;
+      if (t.status >= 300 && t.status < 400 && t.local) {
+        const prox = /^https?:/i.test(t.local) ? t.local : atual.replace(/^(https?:\/\/[^\/]+).*$/i, '$1') + (t.local.charAt(0) === '/' ? '' : '/') + t.local;
+        if (vistos[prox]) { log.push('laço de redirecionamento'); break; }
+        atual = prox;
+        continue;
+      }
+      return { resp: t.resp, status: t.status, log: log };
+    }
+    return { resp: null, status: 0, log: log };
+  }
+
+  function resumo_(t) {
+    const base = t.url.split('?')[0];
+    if (t.erro) return base + ' → erro: ' + t.erro;
+    return base + ' → ' + t.status + (t.local ? ' (vai para ' + t.local.split('?')[0] + ')' : '');
+  }
+
   /**
    * Baixa a página da nota e devolve o texto, ou lança erro com o motivo.
    */
   function buscarTexto(url) {
     // O Apps Script recusa "|" sem codificar na URL
     url = String(url).replace(/\|/g, '%7C');
-    const resp = UrlFetchApp.fetch(url, {
-      muteHttpExceptions: true,
-      followRedirects: true,
-      validateHttpsCertificates: false,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'pt-BR,pt;q=0.9'
-      }
-    });
-    const status = resp.getResponseCode();
+    const r = baixar_(url);
+    console.log('SEFAZ: ' + r.log.join(' | '));
+    if (!r.resp) {
+      const ultimo = r.log[r.log.length - 1] || '';
+      throw new Error(/ssl|tls|handshake|certificate/i.test(ultimo)
+        ? 'o portal da SEFAZ usa uma conexão segura que o Google não aceita'
+        : 'não consegui abrir o portal da SEFAZ');
+    }
+    const resp = r.resp, status = r.status;
     let html;
     const cs = charset_(resp);
     try { html = cs ? resp.getContentText(cs) : resp.getContentText(); } catch (e) { html = resp.getContentText(); }
@@ -147,11 +209,26 @@ const Sefaz = (function () {
       try { html = resp.getContentText('ISO-8859-1'); } catch (e) { /* fica como está */ }
     }
     const texto = htmlParaTexto(html);
-    console.log('SEFAZ ' + status + ' · ' + html.length + ' bytes de HTML · ' + texto.length + ' de texto · ' + url.split('?')[0]);
+    console.log('SEFAZ ' + status + ' · ' + html.length + ' bytes de HTML · ' + texto.length + ' de texto');
     if (status !== 200) throw new Error('a SEFAZ respondeu ' + status);
     if (texto.length < 150) throw new Error('a página da SEFAZ veio vazia (pode depender de JavaScript)');
     if (/captcha/i.test(texto) && !/qtde|quantidade|vl\.? ?unit/i.test(texto)) throw new Error('a SEFAZ pediu captcha');
     return texto;
+  }
+
+  /** Diagnóstico: como cada portal responde ao Google (RN e PE por padrão). */
+  function diagnosticar(ufs) {
+    const saida = [];
+    (ufs || ['24', '26']).forEach(cuf => {
+      const base = URL_QR[cuf];
+      if (!base) return;
+      saida.push((SIGLA[cuf] || cuf) + ':');
+      [base, trocarProtocolo_(base)].forEach(u => {
+        const t = tentar_(u + '?p=1');
+        saida.push('  ' + resumo_(t));
+      });
+    });
+    return saida.join('\n');
   }
 
   return {
@@ -163,6 +240,7 @@ const Sefaz = (function () {
     chaveDaUrl: chaveDaUrl,
     chaveDoTexto: chaveDoTexto,
     htmlParaTexto: htmlParaTexto,
-    buscarTexto: buscarTexto
+    buscarTexto: buscarTexto,
+    diagnosticar: diagnosticar
   };
 })();
