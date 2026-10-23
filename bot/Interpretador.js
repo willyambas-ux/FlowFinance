@@ -13,8 +13,8 @@ const Interpretador = (function () {
       properties: {
         tipo: {
           type: 'string',
-          enum: ['despesa', 'receita', 'consulta', 'nao_e_lancamento'],
-          description: 'despesa = gasto ou pagamento; receita = dinheiro recebido; consulta = pergunta sobre as finanças; nao_e_lancamento = saudação ou outra coisa.'
+          enum: ['despesa', 'receita', 'transferencia', 'consulta', 'nao_e_lancamento'],
+          description: 'despesa = gasto ou pagamento; receita = dinheiro recebido; transferencia = dinheiro entre duas contas da própria pessoa; consulta = pergunta sobre as finanças; nao_e_lancamento = saudação ou outra coisa.'
         },
         consulta: {
           type: 'object',
@@ -36,7 +36,8 @@ const Interpretador = (function () {
         valor: { type: ['number', 'null'], description: 'Valor total em reais, positivo.' },
         data: { type: 'string', description: 'Data no formato YYYY-MM-DD.' },
         descricao: { type: 'string', description: 'Nome curto do estabelecimento ou do gasto, sem valor nem forma de pagamento.' },
-        conta_id: { type: ['string', 'null'], description: 'id de uma conta da lista, ou null.' },
+        conta_id: { type: ['string', 'null'], description: 'id de uma conta da lista, ou null. Em transferência, a conta de onde saiu.' },
+        conta_destino_id: { type: ['string', 'null'], description: 'Só em transferência: id da conta para onde foi.' },
         cartao_id: { type: ['string', 'null'], description: 'id de um cartão da lista, ou null.' },
         categoria_id: { type: ['string', 'null'], description: 'id da categoria mais específica da lista, ou null.' },
         parcelas: { type: 'integer', description: 'Número de parcelas; 1 se à vista.' },
@@ -72,6 +73,7 @@ const Interpretador = (function () {
       'Regras:',
       '- valor: número positivo em reais. "32,50" = 32.5; "1.200" = 1200; "mil" = 1000. Se não houver valor, use null e inclua uma dúvida com campo "valor".',
       '- tipo: "despesa" para gastos e pagamentos; "receita" para recebimentos (recebi, salário, entrou, pix recebido). Perguntas sobre as finanças ("quanto gastei", "qual o saldo", "o que vence", "como está a fatura", "resumo do mês", "orçamento") são "consulta": preencha o objeto consulta e não preencha valor, descricao nem duvidas. Se não for lançamento nem consulta, use "nao_e_lancamento" e responda em "resposta".',
+      '- transferencia: "transferi", "passei", "mandei pix pra minha conta" entre contas da própria pessoa. Preencha conta_id (origem) e conta_destino_id (destino) com ids da lista de contas; deixe categoria_id null. Pagamento de pessoa ou loja não é transferência.',
       '- consulta.categoria_id: use a categoria mais geral que responda à pergunta ("alimentação" = categoria Alimentação inteira; "mercado" = Supermercado). consulta.mes: "mês passado" = mês anterior a hoje; "setembro" = setembro do ano mais recente até hoje.',
       '- data: YYYY-MM-DD. Sem data na mensagem = hoje. "ontem", "sexta", "dia 5" referem-se ao passado mais recente.',
       '- descricao: nome curto com capitalização normal (ex.: "Nordestão", "Almoço", "Uber"). Sem valor e sem forma de pagamento.',
@@ -160,6 +162,14 @@ const Interpretador = (function () {
       resposta: String(bruto.resposta || '')
     };
     if (r.tipo === 'nao_e_lancamento') return r;
+    if (r.tipo === 'transferencia') {
+      r.conta = (bruto.conta_id && Contexto.acharConta(ctx, bruto.conta_id)) ? String(bruto.conta_id) : '';
+      r.contaDestino = (bruto.conta_destino_id && Contexto.acharConta(ctx, bruto.conta_destino_id)) ? String(bruto.conta_destino_id) : '';
+      if (r.contaDestino === r.conta) r.contaDestino = '';
+      r.parcelas = 1;
+      if (!r.descricao) r.descricao = 'Transferência entre contas';
+      return r;
+    }
     if (r.tipo === 'consulta') {
       const c = bruto.consulta || {};
       r.consulta = {

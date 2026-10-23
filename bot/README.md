@@ -15,6 +15,10 @@ Bot do Telegram que transforma mensagens como "almoço 32,50 débito itaú" em l
 - Cada lançamento grava `origem = telegram` e `quem` (quem mandou).
 - Comandos: `/start`, `/ajuda`, `/desfazer`, `/id`.
 
+## Aprende com as correções
+
+Quando você troca a categoria sugerida antes de confirmar, o bot cria uma regra na aba Regras (até 3 palavras da descrição → categoria, prioridade 10). Na próxima vez, ele já acerta.
+
 ## Consultas e áudio
 
 - Perguntas em texto ou áudio: "quanto gastei em mercado este mês?", "qual o saldo do BB?", "o que vence esta semana?", "como está a fatura do XP?".
@@ -31,6 +35,8 @@ O MacroDroid captura a notificação de compra do banco e manda ao bot, que most
 - Ignora boletos, avisos e promoções.
 - A mesma compra avisada por dois apps (banco + Carteira do Google) vira um rascunho só.
 - O cartão ou conta sai da sigla no fim do nome (41 cred XP, 42 cred ITI, 05 cc XP, 04 vr PX).
+- Pix para o seu próprio nome vira **transferência entre contas**; quando o outro banco avisa "Pix recebido de você", o destino é preenchido sozinho. Pix recebido de outra pessoa vira receita.
+- Nomes extras que contam como "você" (ex.: nome completo): propriedade `NOMES_PROPRIOS`, como `["Willyam Brito"]`.
 - Rode `testarNotificacoes` para ver como cada exemplo é lido e `instrucoesMacroDroid` para pegar o endereço de cada pessoa.
 
 ## Instalação (uma vez)

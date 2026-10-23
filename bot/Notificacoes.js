@@ -11,6 +11,7 @@ const Notificacoes = (function () {
   // Só passa o que é gasto de verdade; boletos, promoções e avisos ficam de fora
   const EH_GASTO = /compra.{0,40}aprovad|aprovad.{0,25}compra|voce enviou um pix|pix (enviado|realizado|efetuado)|transferencia (enviada|realizada|efetuada)|pagamento (aprovado|realizado|efetuado)/;
   const EH_CARTEIRA = /carteira|wallet/;
+  const EH_RECEBIDO = /voce recebeu|pix recebido|recebeu um pix|transferencia recebida/;
 
   // Palavra no app/texto -> sigla usada no fim do nome da conta ou do cartão
   const BANCOS = [
@@ -63,7 +64,18 @@ const Notificacoes = (function () {
     const valor = valor_(texto) || valor_(titulo);
     if (!valor) return null;
 
-    const ex = { valor: valor, local: '', data: Formato.hoje(), meio: 'cartao', generico: false, base: n + ' ' + nApp };
+    const ex = { valor: valor, local: '', data: Formato.hoje(), meio: 'cartao', direcao: 'saida', generico: false, base: n + ' ' + nApp };
+
+    if (EH_RECEBIDO.test(n)) {
+      // "Você recebeu R$ 1,00 de WILLYAM, CPF ..." / "Você recebeu um Pix de FULANO no valor de R$ ..."
+      const m = sem.match(/recebeu (?:um pix )?(?:de R\$\s?[\d.,]+ )?de (.+?)(?:,| CPF| no valor|\.|$)/i) ||
+                sem.match(/recebeu R\$\s?[\d.,]+ de (.+?)(?:,| CPF|\.|$)/i);
+      ex.direcao = 'entrada';
+      ex.meio = 'conta';
+      ex.local = m ? limparLocal_(m[1]) : '';
+      if (!ex.local) { ex.local = 'Pix recebido'; }
+      return ex;
+    }
 
     if (EH_CARTEIRA.test(nApp)) {
       // Carteira do Google: título = loja; texto = "R$ 26,28 com NCC_Iti_Platinum • 4741"
@@ -131,6 +143,32 @@ const Notificacoes = (function () {
     }
   }
 
+  /** A pessoa do Pix é o próprio usuário? Compara o primeiro nome (e NOMES_PROPRIOS, se houver). */
+  function ehProprio_(quem, pessoa) {
+    const alvo = norm_(pessoa);
+    if (!alvo) return false;
+    const nomes = [quem];
+    try { (JSON.parse(Config.get('NOMES_PROPRIOS', '[]')) || []).forEach(n => nomes.push(n)); } catch (e) { /* ignora */ }
+    return nomes.some(n => {
+      const nn = norm_(n);
+      if (!nn) return false;
+      return alvo === nn || alvo.indexOf(nn + ' ') === 0 || nn.split(' ')[0] === alvo.split(' ')[0] && nn.split(' ')[0].length >= 4;
+    });
+  }
+
+  function novoRascunho_(base, uid, quem, app, titulo, texto) {
+    return Rascunho.criar(Object.assign({
+      parcelas: 1,
+      duvidas: [],
+      chatId: uid,
+      usuarioId: uid,
+      quem: quem,
+      origem: 'notificacao',
+      cabecalho: 'Notificação · ' + (app || 'banco'),
+      textoOriginal: (titulo ? titulo + ': ' : '') + texto
+    }, base));
+  }
+
   /** Ponto de entrada (chamado pelo doPost). */
   function processar(p) {
     const uid = String(p.uid || '');
@@ -141,31 +179,63 @@ const Notificacoes = (function () {
     const ex = extrair(app, titulo, texto);
     if (!ex) { console.log('ignorada: ' + app + ' | ' + titulo + ' | ' + texto); return 'ignorada'; }
 
-    // Mesma compra avisada pelo banco e pela Carteira do Google: fica a primeira
+    // Mesma compra avisada por dois apps (ou duas vezes): fica a primeira.
+    // A direção entra na chave: saída e entrada do mesmo valor são coisas diferentes.
     const cache = CacheService.getScriptCache();
-    const marca = 'notif_' + uid + '_' + Math.round(ex.valor * 100);
+    const cents = Math.round(ex.valor * 100);
+    const marca = 'notif_' + uid + '_' + ex.direcao + '_' + cents;
     if (cache.get(marca)) { console.log('duplicada: ' + app + ' ' + ex.valor); return 'duplicada'; }
     cache.put(marca, '1', JANELA_DUPLICADA_SEG);
 
     const ctx = Contexto.carregar();
     const dest = destino(ctx, ex);
-    const r = Rascunho.criar({
-      tipo: 'despesa',
-      valor: ex.valor,
-      data: ex.data,
-      descricao: ex.local,
-      conta: dest.conta,
-      cartao: dest.cartao,
-      categoria: categoria_(ctx, ex, quem),
-      parcelas: 1,
-      duvidas: [],
-      chatId: uid,
-      usuarioId: uid,
-      quem: quem,
-      origem: 'notificacao',
-      cabecalho: 'Notificação · ' + (app || 'banco'),
-      textoOriginal: (titulo ? titulo + ': ' : '') + texto
-    });
+    const proprio = ex.meio === 'conta' && ehProprio_(quem, ex.local);
+    const chaveTransf = 'transf_' + uid + '_' + cents;
+    const chaveEntrada = 'entrada_' + uid + '_' + cents;
+
+    // Pix para você mesmo: transferência entre contas
+    if (ex.direcao === 'saida' && proprio) {
+      const r = novoRascunho_({
+        tipo: 'transferencia', valor: ex.valor, data: ex.data,
+        descricao: 'Transferência entre contas',
+        conta: dest.conta, contaDestino: cache.get(chaveEntrada) || '', cartao: '', categoria: ''
+      }, uid, quem, app, titulo, texto);
+      if (r.contaDestino === r.conta) r.contaDestino = '';
+      Rascunho.mostrarNovo(r, ctx);
+      cache.put(chaveTransf, r.chave, JANELA_DUPLICADA_SEG);
+      return 'transferencia';
+    }
+
+    // Pix recebido de você mesmo: completa a transferência que saiu da outra conta
+    if (ex.direcao === 'entrada' && proprio) {
+      const chave = cache.get(chaveTransf);
+      const r = chave ? Rascunho.ler(chave) : null;
+      if (r && r.estado === 'aberto' && !r.contaDestino && dest.conta && dest.conta !== r.conta) {
+        r.contaDestino = dest.conta;
+        Rascunho.salvar(r);
+        Rascunho.atualizar(r, ctx);
+        return 'transferencia-completa';
+      }
+      // A saída ainda não chegou (ou veio de banco não monitorado): guarda a conta de destino
+      if (dest.conta) cache.put(chaveEntrada, dest.conta, JANELA_DUPLICADA_SEG);
+      return 'entrada-aguardando';
+    }
+
+    // Dinheiro recebido de outra pessoa: receita
+    if (ex.direcao === 'entrada') {
+      const r = novoRascunho_({
+        tipo: 'receita', valor: ex.valor, data: ex.data,
+        descricao: ex.local === 'Pix recebido' ? 'Pix recebido' : 'Pix de ' + ex.local,
+        conta: dest.conta, cartao: '', categoria: ''
+      }, uid, quem, app, titulo, texto);
+      Rascunho.mostrarNovo(r, ctx);
+      return 'receita';
+    }
+
+    const r = novoRascunho_({
+      tipo: 'despesa', valor: ex.valor, data: ex.data, descricao: ex.local,
+      conta: dest.conta, cartao: dest.cartao, categoria: categoria_(ctx, ex, quem)
+    }, uid, quem, app, titulo, texto);
     Rascunho.mostrarNovo(r, ctx);
     return 'ok';
   }
