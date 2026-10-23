@@ -7,6 +7,7 @@ jobs:
     steps:
       - name: Testar
         run: |
+          set +e
           nota() { echo "::notice::$(echo "$1" | tr '\n' ' ' | cut -c1-900)"; }
           nota "local: $(curl -s -m 10 https://ipinfo.io/json | tr -d '\n ' | grep -oE '"(city|country|org)":"[^"]*"' | tr '\n' ' ')"
           r=$(curl -sS -m 40 -o /tmp/a.html -w 'HTTP %{http_code} %{time_total}s' 'https://nfce.sefaz.rn.gov.br/portalDFE/NFCe/mDadosNFCe.aspx?p=1' 2>&1); nota "RN novo mDados: $r | $(head -c 200 /tmp/a.html 2>/dev/null | tr -s ' \n' ' ')"
