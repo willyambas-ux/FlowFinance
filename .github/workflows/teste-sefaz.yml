@@ -1,0 +1,20 @@
+# Teste temporário: o GitHub consegue abrir os portais da NFC-e?
+name: Teste SEFAZ
+on: workflow_dispatch
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Onde estou
+        run: curl -s -m 10 https://ipinfo.io/json | grep -E '"(ip|city|country|org)"' || true
+      - name: RN novo
+        run: curl -sS -m 40 -o /tmp/rn.html -w 'HTTP %{http_code} em %{time_total}s\n' 'https://nfce.sefaz.rn.gov.br/portalDFE/NFCe/mDadosNFCe.aspx?p=1' || true
+      - name: RN novo (consultarNFCe)
+        run: curl -sS -m 40 -L -o /tmp/rn2.html -w 'HTTP %{http_code} em %{time_total}s\n' 'https://nfce.sefaz.rn.gov.br/consultarNFCe.aspx?p=1' || true
+      - name: RN antigo com TLS antigo
+        run: |
+          printf 'openssl_conf = c\n[c]\nssl_conf = s\n[s]\nsystem_default = d\n[d]\nMinProtocol = TLSv1\nCipherString = DEFAULT@SECLEVEL=0\nOptions = UnsafeLegacyRenegotiation\n' > /tmp/ossl.cnf
+          OPENSSL_CONF=/tmp/ossl.cnf curl -sS -m 40 -L -o /tmp/rn3.html -w 'HTTP %{http_code} em %{time_total}s\n' 'https://nfce.set.rn.gov.br/consultarNFCe.aspx?p=1' || true
+          echo '--- detalhes TLS'; echo | timeout 20 openssl s_client -connect nfce.set.rn.gov.br:443 -servername nfce.set.rn.gov.br 2>&1 | grep -E 'Protocol|Cipher|error|alert' | head -5 || true
+      - name: Tamanhos
+        run: ls -la /tmp/*.html 2>/dev/null; for f in /tmp/rn*.html; do echo "== $f"; head -c 300 $f | tr -s ' \n' ' '; echo; done
