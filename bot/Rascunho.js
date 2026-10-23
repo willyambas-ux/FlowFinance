@@ -27,7 +27,7 @@ const Rascunho = (function () {
 
   function criar(dados) {
     const r = Object.assign({ chave: novaChave_(), estado: 'aberto', ids: [], contaDestino: '' }, dados);
-    r.categoriaSugerida = r.categoria || '';
+    if (r.categoriaSugerida === undefined) r.categoriaSugerida = r.categoria || '';
     return salvar(r);
   }
 
@@ -55,6 +55,11 @@ const Rascunho = (function () {
     L.push('<b>' + tipo + ' · ' + (faltaValor_(r) ? 'valor?' : Formato.brl(r.valor)) + '</b>');
     L.push(Telegram.esc(r.descricao));
     if (r.itensResumo) L.push('<i>' + Telegram.esc(r.itensResumo) + '</i>');
+    if (!titulo && r.estado === 'aberto') {
+      if (r.sefaz === 'buscando') L.push('<i>⏳ Buscando a nota na SEFAZ…</i>');
+      else if (r.sefaz === 'ok') L.push('<i>✓ Itens conferidos na SEFAZ</i>');
+      else if (r.sefaz === 'falhou') L.push('<i>SEFAZ indisponível (' + Telegram.esc(r.sefazMotivo || 'erro') + '); itens lidos da foto</i>');
+    }
 
     if (ehTransf_(r)) {
       L.push('De: ' + nomeConta_(ctx, r.conta));

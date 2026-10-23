@@ -28,7 +28,7 @@ const Cupom = (function () {
         parcelas: { type: 'integer', description: '1 se à vista.' },
         itens: {
           type: 'array',
-          description: 'Itens da nota (no máximo 30). Vazio em comprovantes sem itens.',
+          description: 'Todos os itens da nota (até 100). Vazio em comprovantes sem itens.',
           items: {
             type: 'object',
             properties: {
@@ -55,9 +55,12 @@ const Cupom = (function () {
     }
   };
 
-  function sistema_(ctx, quem, legenda) {
+  function sistema_(ctx, quem, legenda, fonte) {
     return [
       'Você lê fotos de cupons fiscais, notas (NFC-e/DANFE), comprovantes de maquininha e de Pix de um casal brasileiro que controla as finanças.',
+      fonte === 'sefaz'
+        ? 'Desta vez você recebe o TEXTO da página oficial da NFC-e no portal da SEFAZ (fonte exata): copie valores, quantidades e itens como estão. Se a página for erro, captcha ou não tiver a nota, e_comprovante = false.'
+        : '',
       'Responda sempre chamando a ferramenta ler_cupom.',
       '',
       'Hoje é ' + Formato.hoje() + '. Quem mandou a foto: ' + quem + '.',
@@ -97,10 +100,18 @@ const Cupom = (function () {
     const bloco = arquivo.mime === 'application/pdf'
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dados } }
       : { type: 'image', source: { type: 'base64', media_type: arquivo.mime, data: dados } };
-    return Interpretador.chamarIA(sistema_(ctx, quem, legenda), [
+    return Interpretador.chamarIA(sistema_(ctx, quem, legenda, 'foto'), [
       bloco,
       { type: 'text', text: 'Leia este comprovante.' + (legenda ? ' Legenda: ' + legenda : '') }
-    ], FERRAMENTA, 2048);
+    ], FERRAMENTA, 4096);
+  }
+
+  /** Consulta a nota na SEFAZ e lê o texto da página com a IA. */
+  function lerSefaz_(url, ctx, quem, legenda) {
+    const texto = Sefaz.buscarTexto(url);
+    return Interpretador.chamarIA(sistema_(ctx, quem, legenda, 'sefaz'), [
+      { type: 'text', text: 'Texto da página da NFC-e (SEFAZ):\n\n' + texto }
+    ], FERRAMENTA, 8192);
   }
 
   function num_(v) {
@@ -128,7 +139,7 @@ const Cupom = (function () {
 
   /** Itens no formato da aba Itens (histórico de preços). */
   function itensParaGravar_(b) {
-    const itens = Array.isArray(b.itens) ? b.itens.slice(0, 40) : [];
+    const itens = Array.isArray(b.itens) ? b.itens.slice(0, 100) : [];
     const totalBruto = itens.reduce((s, i) => s + (num_(i.valor) || 0), 0);
     const desconto = num_(b.desconto) || 0;
     return itens.filter(i => String(i.produto || i.descricao || '').trim()).map(i => {
@@ -197,6 +208,101 @@ const Cupom = (function () {
     return candidatos[0] || null;
   }
 
+  function aplicarPagamento_(r, b, ctx) {
+    if (r.conta || r.cartao) return;
+    if (b.cartao_id && Contexto.acharCartao(ctx, b.cartao_id)) r.cartao = String(b.cartao_id);
+    else if (b.conta_id && Contexto.acharConta(ctx, b.conta_id)) r.conta = String(b.conta_id);
+    // Crédito só existe em cartão; se há um cartão só, é ele
+    if (!r.cartao && !r.conta && b.forma_pagamento === 'credito' && ctx.cartoes.length === 1) r.cartao = ctx.cartoes[0].id;
+    // Vale: se há uma conta de vale só, é ela
+    if (!r.cartao && !r.conta && b.forma_pagamento === 'vale') {
+      const vales = ctx.contas.filter(c => /\bvr\b|vale/i.test(c.nome + ' ' + c.tipo));
+      if (vales.length === 1) r.conta = vales[0].id;
+    }
+  }
+
+  function aplicarCategoria_(r, b, ctx) {
+    const cat = b.categoria_id ? Contexto.acharCategoria(ctx, b.categoria_id) : null;
+    if (cat && cat.tipo === r.tipo) r.categoria = cat.id;
+    const daRegra = Interpretador.categoriaPorRegra(r.textoOriginal || '', r.descricao + ' ' + (b.razao_social || ''));
+    const catRegra = daRegra ? Contexto.acharCategoria(ctx, daRegra) : null;
+    if (catRegra && catRegra.tipo === r.tipo) r.categoria = catRegra.id;
+    r.categoriaSugerida = r.categoria || '';
+  }
+
+  function procurarParecido_(r) {
+    r.parecido = null;
+    if (!r.valor) return;
+    try {
+      const par = acharParecido(r.valor, r.tipo, r.data, false);
+      if (par) {
+        r.parecido = {
+          id: String(par.id),
+          descricao: String(par.descricao || ''),
+          data: String(par.data).slice(0, 10),
+          status: String(par.status || ''),
+          origem: String(par.origem || '')
+        };
+      }
+    } catch (e) {
+      console.warn('procura de parecido falhou: ' + e);
+    }
+  }
+
+  /** Copia para o rascunho o que foi lido (da foto ou da SEFAZ). */
+  function aplicarLeitura_(r, b, ctx) {
+    const valor = num_(b.valor_total) > 0 ? Math.round(num_(b.valor_total) * 100) / 100 : null;
+    if (valor && !(b.legivel === false)) r.valor = valor;
+    if (Formato.ehDataISO(b.data) && b.data <= Formato.hoje(30)) r.data = b.data;
+    const loja = String(b.loja || b.razao_social || '').trim();
+    if (loja) r.descricao = loja.slice(0, 80);
+    if (b.forma_pagamento) r.formaPagamento = b.forma_pagamento;
+    r.cabecalho = 'Cupom · ' + (loja || 'foto') + (r.formaPagamento ? ' · ' + rotuloPagamento_(r.formaPagamento) : '');
+    r.parcelas = Math.max(1, Math.min(48, Math.floor(num_(b.parcelas) || r.parcelas || 1)));
+    r.itensResumo = resumoItens_(b);
+    r.observacao = observacao_(b);
+    r.itens = itensParaGravar_(b);
+    r.cupomCab = {
+      loja: loja,
+      cnpj: String(b.cnpj || (r.cupomCab && r.cupomCab.cnpj) || ''),
+      chave_nfce: String(b.chave_acesso || (r.cupomCab && r.cupomCab.chave_nfce) || '').replace(/\D/g, ''),
+      quem: r.quem
+    };
+    aplicarPagamento_(r, b, ctx);
+    aplicarCategoria_(r, b, ctx);
+  }
+
+  function rascunhoVazio_(chatId, usuarioId, quem, legenda) {
+    return {
+      tipo: 'despesa', valor: null, data: Formato.hoje(), descricao: 'Cupom',
+      conta: '', cartao: '', categoria: '', parcelas: 1, duvidas: [],
+      chatId: chatId, usuarioId: usuarioId, quem: quem,
+      origem: 'cupom', textoOriginal: legenda
+    };
+  }
+
+  /**
+   * Completa o rascunho com os dados oficiais da SEFAZ. Devolve true se conseguiu.
+   * Se falhar, o rascunho fica com o que foi lido da foto.
+   */
+  function completarPelaSefaz_(r, url, ctx) {
+    try {
+      const b = lerSefaz_(url, ctx, r.quem, r.textoOriginal || '');
+      if (!b.e_comprovante || !(num_(b.valor_total) > 0)) throw new Error('a página não trouxe a nota');
+      if (!b.chave_acesso) b.chave_acesso = Sefaz.chaveDaUrl(url);
+      const valorAntes = r.valor;
+      aplicarLeitura_(r, b, ctx);
+      if (r.valor !== valorAntes || !r.parecido) procurarParecido_(r);
+      r.sefaz = 'ok';
+      return true;
+    } catch (err) {
+      console.warn('SEFAZ: ' + (err && err.message ? err.message : err));
+      r.sefaz = 'falhou';
+      r.sefazMotivo = String(err && err.message ? err.message : err).slice(0, 120);
+      return false;
+    }
+  }
+
   /**
    * Ponto de entrada: foto ou documento recebido no Telegram.
    */
@@ -221,66 +327,47 @@ const Cupom = (function () {
       return true;
     }
 
-    const tipo = b.tipo === 'receita' ? 'receita' : 'despesa';
-    const valor = num_(b.valor_total) > 0 ? Math.round(num_(b.valor_total) * 100) / 100 : null;
-    const r = {
-      tipo: tipo,
-      valor: b.legivel === false && !valor ? null : valor,
-      data: Formato.ehDataISO(b.data) && b.data <= Formato.hoje(30) ? b.data : Formato.hoje(),
-      descricao: String(b.loja || b.razao_social || 'Cupom').trim().slice(0, 80),
-      conta: '', cartao: '', categoria: '',
-      parcelas: Math.max(1, Math.min(48, Math.floor(num_(b.parcelas) || 1))),
-      duvidas: [],
-      chatId: chatId,
-      usuarioId: usuarioId,
-      quem: quem,
-      origem: 'cupom',
-      cabecalho: 'Cupom · ' + String(b.loja || b.razao_social || 'foto').trim() + (b.forma_pagamento ? ' · ' + rotuloPagamento_(b.forma_pagamento) : ''),
-      itensResumo: resumoItens_(b),
-      observacao: observacao_(b),
-      itens: itensParaGravar_(b),
-      cupomCab: {
-        loja: String(b.loja || b.razao_social || '').trim(),
-        cnpj: String(b.cnpj || ''),
-        chave_nfce: String(b.chave_acesso || '').replace(/\D/g, ''),
-        quem: quem
-      },
-      textoOriginal: legenda
-    };
+    const r = rascunhoVazio_(chatId, usuarioId, quem, legenda);
+    r.tipo = b.tipo === 'receita' ? 'receita' : 'despesa';
+    aplicarLeitura_(r, b, ctx);
+    procurarParecido_(r);
 
-    if (b.cartao_id && Contexto.acharCartao(ctx, b.cartao_id)) r.cartao = String(b.cartao_id);
-    else if (b.conta_id && Contexto.acharConta(ctx, b.conta_id)) r.conta = String(b.conta_id);
-    // Crédito só existe em cartão; se há um cartão só, é ele
-    if (!r.cartao && !r.conta && b.forma_pagamento === 'credito' && ctx.cartoes.length === 1) r.cartao = ctx.cartoes[0].id;
-    // Vale: se há uma conta de vale só, é ela
-    if (!r.cartao && !r.conta && b.forma_pagamento === 'vale') {
-      const vales = ctx.contas.filter(c => /\bvr\b|vale/i.test(c.nome + ' ' + c.tipo));
-      if (vales.length === 1) r.conta = vales[0].id;
+    // NFC-e com chave válida: mostra o que leu da foto e busca os itens oficiais
+    const chave = String(b.chave_acesso || '').replace(/\D/g, '');
+    const url = Sefaz.ehNfce(chave) ? Sefaz.urlDaChave(chave) : '';
+    if (url) r.sefaz = 'buscando';
+
+    const rasc = Rascunho.criar(r);
+    Rascunho.mostrarNovo(rasc, ctx);
+    if (url) {
+      Telegram.digitando(chatId);
+      completarPelaSefaz_(rasc, url, ctx);
+      Rascunho.salvar(rasc);
+      Rascunho.atualizar(rasc, ctx);
     }
+    return true;
+  }
 
-    const cat = b.categoria_id ? Contexto.acharCategoria(ctx, b.categoria_id) : null;
-    if (cat && cat.tipo === tipo) r.categoria = cat.id;
-    const daRegra = Interpretador.categoriaPorRegra(legenda, r.descricao + ' ' + (b.razao_social || ''));
-    const catRegra = daRegra ? Contexto.acharCategoria(ctx, daRegra) : null;
-    if (catRegra && catRegra.tipo === tipo) r.categoria = catRegra.id;
-
-    if (r.valor) {
-      try {
-        const par = acharParecido(r.valor, tipo, r.data, false);
-        if (par) {
-          r.parecido = {
-            id: String(par.id),
-            descricao: String(par.descricao || ''),
-            data: String(par.data).slice(0, 10),
-            status: String(par.status || ''),
-            origem: String(par.origem || '')
-          };
-        }
-      } catch (e) {
-        console.warn('procura de parecido falhou: ' + e);
-      }
+  /**
+   * Link da NFC-e (QR lido pela câmera e compartilhado) ou a chave de 44 dígitos
+   * digitada. Devolve false se o texto não for nenhum dos dois.
+   */
+  function processarTexto(texto, chatId, usuarioId, quem) {
+    let url = Sefaz.urlDoTexto(texto);
+    if (!url) {
+      const chave = Sefaz.chaveDoTexto(texto);
+      url = chave ? Sefaz.urlDaChave(chave) : '';
     }
+    if (!url) return false;
 
+    Telegram.digitando(chatId);
+    const ctx = Contexto.carregar();
+    const r = rascunhoVazio_(chatId, usuarioId, quem, '');
+    if (!completarPelaSefaz_(r, url, ctx)) {
+      Telegram.enviar(chatId, 'Não consegui consultar essa nota na SEFAZ: ' + Telegram.esc(r.sefazMotivo || 'erro') +
+        '.\nMande a foto do cupom que eu leio por ela.');
+      return true;
+    }
     const rasc = Rascunho.criar(r);
     Rascunho.mostrarNovo(rasc, ctx);
     return true;
@@ -290,5 +377,5 @@ const Cupom = (function () {
     return { credito: 'crédito', debito: 'débito', pix: 'Pix', dinheiro: 'dinheiro', vale: 'vale', boleto: 'boleto' }[f] || 'outro';
   }
 
-  return { processar: processar, arquivoDaMensagem: arquivoDaMensagem, acharParecido: acharParecido, FERRAMENTA: FERRAMENTA };
+  return { processar: processar, processarTexto: processarTexto, arquivoDaMensagem: arquivoDaMensagem, acharParecido: acharParecido, FERRAMENTA: FERRAMENTA };
 })();

@@ -130,6 +130,7 @@ function tratarMensagem_(msg) {
       '<i>recebi 500 do freela no BB</i>',
       '',
       'Ou mande a <b>foto do cupom</b> ou do comprovante (Pix, maquininha). Na legenda, se quiser, diga o pagamento: <i>xp</i>, <i>itaú</i>.',
+      'Nota fiscal (NFC-e): confiro os itens na SEFAZ. Também vale mandar o link do QR code ou a chave de 44 dígitos.',
       '',
       'Também respondo perguntas:',
       '<i>quanto gastei em mercado este mês?</i>',
@@ -167,6 +168,9 @@ function tratarMensagem_(msg) {
     Telegram.enviar(chatId, 'Não conheço esse comando. Mande /ajuda.');
     return;
   }
+
+  // Link da NFC-e (QR lido pela câmera) ou chave de 44 dígitos
+  if (Cupom.processarTexto(texto, chatId, usuarioId, quem)) return;
 
   processarTexto_(chatId, usuarioId, quem, texto);
 }
