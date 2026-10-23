@@ -580,4 +580,30 @@ a.btn { text-decoration: none; }
   .g-grade-cartao > :first-child { grid-column: 1 / -1; }
   .g-grade-1-14, .g-grade-14-1 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ===== Tela grande — etapa 3 ===== */
+.g-seg-cfg { min-width: 0; width: 100%; }
+.g-seg-cfg button { font-size: 13px; padding: 0 6px; }
+.g-inativo td { opacity: .55; }
+.g-check-form { border: none; padding: 10px 0; align-items: flex-start; }
+.g-check-form input { margin-top: 2px; }
+.g-check-form small { display: block; font-weight: 500; color: var(--suave); font-size: 12px; margin-top: 2px; }
+.campos .g-check-form { padding: 10px 14px; border-bottom: 1px solid var(--linha-2); }
+.g-cat-grupo { display: flex; flex-direction: column; border: 1px solid var(--linha-2); border-radius: 12px; margin: 0 0 8px; overflow: hidden; }
+.g-cat-btn { display: flex; align-items: center; gap: 8px; justify-content: space-between; border: none; background: none; text-align: left; padding: 8px 12px 8px 26px; font-size: 14px; border-top: 1px solid var(--linha-2); }
+.g-cat-btn:hover { background: var(--linha-2); }
+.g-cat-pai { padding-left: 12px; border-top: none; background: var(--fundo); }
+.g-cat-pai b { margin-right: auto; }
+.g-manut { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--linha-2); }
+.g-manut:last-child { border-bottom: none; }
+.g-manut > div { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.g-grupo-pat { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--linha-2); font-size: 14px; }
+.g-grupo-pat:last-child { border-bottom: none; }
+.g-imp-passos { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) auto; gap: 16px; align-items: end; }
+.g-imp-passo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--suave); position: relative; padding-left: 34px; }
+.g-num-passo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--verde); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.g-select-largo { max-width: none; width: 100%; height: 42px; border-radius: 12px; }
+.g-imp-passo input[type="file"] { font-size: 13px; }
+.g-dup td { background: var(--cobre-claro); }
+.g-dup td:first-child { box-shadow: inset 3px 0 0 var(--cobre); }
 </style>

@@ -1,0 +1,549 @@
+<script>
+'use strict';
+/* ============================================================================
+ * Tela grande — etapa 3: Patrimônio, Importar extrato, Fechamento e
+ * Configurações (cadastros, regras, recorrências, pessoas e sistema).
+ * Com ela o menu não leva mais ao app clássico.
+ * ========================================================================== */
+
+(function () {
+  const ICO = {
+    importar: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+    fechar: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'
+  };
+  LATERAL.forEach(it => {
+    if (it.tela === 'patrimonio') { delete it.tela; it.aba = 'patrimonio'; }
+    if (it.tela === 'configuracoes') { delete it.tela; it.aba = 'config'; }
+  });
+  const iCfg = LATERAL.findIndex(it => it.aba === 'config');
+  LATERAL.splice(iCfg, 0,
+    { aba: 'importar', nome: 'Importar extrato', icone: ICO.importar },
+    { aba: 'fechamento', nome: 'Fechamento', icone: ICO.fechar });
+  ['patrimonio', 'importar', 'fechamento', 'config'].forEach(a => { PARA_CELULAR[a] = 'mais'; });
+})();
+
+S.patDados = null;
+S.fechDados = null;
+S.cfgDados = null;
+S.cfgAba = 'contas';
+S.imp = { tipo: 'conta', id: '', texto: '', nomeArquivo: '', linhas: null, marcadas: null, formato: '' };
+
+const ABAS_G3 = ['patrimonio', 'importar', 'fechamento', 'config'];
+
+function carregarAbaG3(aba, forcar, velho) {
+  if (aba === 'patrimonio' && (forcar || !S.patDados || velho)) return run('appPatrimonio').then(d => { S.patDados = d; });
+  if (aba === 'fechamento' && (forcar || !S.fechDados || velho)) return run('appFechamento').then(d => { S.fechDados = d; });
+  if (aba === 'config' && (forcar || !S.cfgDados || velho)) return run('appConfig').then(d => { S.cfgDados = d; });
+  return null;
+}
+
+// Encaixa nas funções da etapa 2 (já ligadas ao núcleo)
+(function () {
+  const carregarAnt = carregarAbaG2, telaAnt = telaG2, ligarAnt = ligarTelaG2;
+  carregarAbaG2 = function (aba, forcar, velho) {
+    if (ABAS_G3.indexOf(aba) !== -1) return carregarAbaG3(aba, forcar, velho);
+    return carregarAnt(aba, forcar, velho);
+  };
+  telaG2 = function (aba) {
+    if (aba === 'patrimonio') return telaPatrimonioG();
+    if (aba === 'importar') return telaImportarG();
+    if (aba === 'fechamento') return telaFechamentoG();
+    if (aba === 'config') return telaConfigG();
+    return telaAnt(aba);
+  };
+  ligarTelaG2 = function (tela) {
+    ligarAnt(tela);
+    if (ABAS_G3.indexOf(S.aba) !== -1) ligarTelaG3(tela);
+  };
+})();
+
+/* ============================================================================
+ * Formulário genérico em painel lateral
+ * campos: [{ id, rotulo, tipo: text|num|date|select|check, opcoes: [[valor, texto]], dica, valor }]
+ * ========================================================================== */
+
+function formPainel(titulo, campos, salvar, excluir, nota) {
+  const html = campos.map(c => {
+    if (c.tipo === 'check') {
+      return '<label class="g-check g-check-form"><input type="checkbox" id="pf-' + c.id + '"' + (c.valor ? ' checked' : '') + '><span>' + esc(c.rotulo) +
+        (c.dica ? '<small>' + esc(c.dica) + '</small>' : '') + '</span></label>';
+    }
+    let input;
+    if (c.tipo === 'select') {
+      input = '<select id="pf-' + c.id + '">' + c.opcoes.map(o => {
+        if (o.grupo) return '<optgroup label="' + esc(o.grupo) + '">' + o.itens.map(x => '<option value="' + esc(x[0]) + '"' + (String(c.valor) === String(x[0]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>').join('') + '</optgroup>';
+        return '<option value="' + esc(o[0]) + '"' + (String(c.valor) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select>';
+    } else {
+      const tipo = c.tipo === 'date' ? 'date' : 'text';
+      const v = c.tipo === 'num' && c.valor !== '' && c.valor !== undefined && c.valor !== null ? numBR(c.valor) : (c.valor === undefined || c.valor === null ? '' : c.valor);
+      input = '<input id="pf-' + c.id + '" type="' + tipo + '"' + (c.tipo === 'num' ? ' inputmode="decimal"' : '') + ' value="' + esc(v) + '"' + (c.placeholder ? ' placeholder="' + esc(c.placeholder) + '"' : '') + '>';
+    }
+    return '<div class="campo"><label for="pf-' + c.id + '">' + esc(c.rotulo) + '</label>' + input + (c.dica ? '<span class="dica" style="color:var(--suave)">' + esc(c.dica) + '</span>' : '') + '</div>';
+  }).join('');
+  const h = topoFolha(titulo) + '<div class="campos">' + html + '</div>' + (nota ? '<p class="obs">' + nota + '</p>' : '') +
+    '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="pf-salvar">Salvar</button>' +
+    (excluir ? '<button type="button" class="btn btn-perigo" data-acao="pf-excluir">Excluir</button>' : '') + '</div>';
+  abrirFolha(h, function (folha) {
+    const ler = function () {
+      const o = {};
+      campos.forEach(c => {
+        const el = folha.querySelector('#pf-' + c.id);
+        if (!el) return;
+        if (c.tipo === 'check') o[c.id] = el.checked;
+        else if (c.tipo === 'num') o[c.id] = textoParaNumero(el.value) * (String(el.value).trim().charAt(0) === '-' ? -1 : 1);
+        else o[c.id] = el.value;
+      });
+      return o;
+    };
+    const b = folha.querySelector('[data-acao="pf-salvar"]');
+    b.onclick = function () {
+      b.disabled = true;
+      Promise.resolve(salvar(ler(), folha)).then(function (msg) { fecharFolha(); aviso(msg || 'Salvo.'); invalidar(); })
+        .catch(function (e) { b.disabled = false; erro(e); });
+    };
+    const ex = folha.querySelector('[data-acao="pf-excluir"]');
+    if (ex) {
+      let armado = false;
+      ex.onclick = function () {
+        if (!armado) { armado = true; ex.textContent = 'Toque de novo para excluir'; setTimeout(function () { if (ex.isConnected) { armado = false; ex.textContent = 'Excluir'; } }, 4000); return; }
+        ex.disabled = true;
+        Promise.resolve(excluir(ler(), folha)).then(function (msg) { fecharFolha(); aviso(msg || 'Excluído.'); invalidar(); })
+          .catch(function (e) { ex.disabled = false; armado = false; ex.textContent = 'Excluir'; erro(e); });
+      };
+    }
+  });
+}
+
+/* ============================================================================
+ * Patrimônio
+ * ========================================================================== */
+
+function telaPatrimonioG() {
+  let h = cabecalhoGrande('Patrimônio', null, '', '<span class="topo-mini">tudo o que vocês têm menos tudo o que devem</span>');
+  const d = S.patDados;
+  if (S.erro_patrimonio && !d) return h + falhaTela(S.erro_patrimonio);
+  if (!d) return h + '<div class="g-grade-3">' + esqueleto([110, 110, 110]) + '</div>' + esqueleto([240, 300]);
+  h += '<div class="g-grade-3">' +
+    '<section class="g-cartao g-escuro"><span class="g-pergunta">Patrimônio líquido</span><span class="g-total-fatura">' + brl(d.liquido) + '</span>' +
+    '<span class="g-rodape">' + (d.variacao_12m >= 0 ? 'cresceu ' : 'caiu ') + brl(Math.abs(d.variacao_12m)) + ' em 12 meses</span></section>' +
+    '<section class="g-cartao"><span class="g-pergunta">O que vocês têm</span><span class="g-numero positivo">' + brl(d.ativos) + '</span><span class="g-rodape">contas e investimentos com saldo positivo</span></section>' +
+    '<section class="g-cartao"><span class="g-pergunta">O que vocês devem</span><span class="g-numero">' + brl(d.passivos) + '</span><span class="g-rodape">faturas em aberto e saldos negativos</span></section></div>';
+  const max = Math.max.apply(null, d.evolucao.map(e => Math.abs(e.pl)).concat([1]));
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Evolução nos últimos 12 meses</h2><span class="g-suave">patrimônio líquido no fim de cada mês</span></div>' +
+    '<div class="g-colunas" style="--n:' + d.evolucao.length + '" role="img" aria-label="' + esc(d.evolucao.map(e => e.rotulo + ' ' + numBR(e.pl, 0)).join('; ')) + '">' +
+    d.evolucao.map(e => '<div class="g-coluna"><span class="g-barra-val">' + numBR(e.pl / 1000, 1) + 'k</span><div class="g-par"><span style="width:26px;height:' + Math.max(2, Math.abs(e.pl) / max * 170).toFixed(0) + 'px;background:' + (e.pl < 0 ? 'var(--cobre)' : 'var(--verde)') + '"></span></div><span class="g-barra-rot">' + esc(e.rotulo) + '</span></div>').join('') + '</div></section>';
+  h += '<div class="g-grade-2"><section class="g-cartao"><h2>Contas por tipo</h2>' + d.grupos.map(g =>
+    '<div class="g-grupo-pat"><div class="g-entre"><b>' + esc(g.nome) + '</b><b class="' + (g.total < 0 ? 'g-alerta' : '') + '">' + brl(g.total) + '</b></div>' +
+    g.contas.map(c => '<div class="g-entre g-pequeno"><span class="g-suave">' + esc(c.nome) + '</span><span>' + brl(c.saldo) + '</span></div>').join('') + '</div>').join('') + '</section>' +
+    '<section class="g-cartao"><h2>Cartões</h2>' + (d.cartoes.length ? d.cartoes.map(c => '<div class="g-entre" style="font-size:14px"><span>' + esc(c.nome) + '</span><b>' + brl(c.saldo) + '</b></div>').join('') : '<p class="g-vazio">Nenhuma fatura em aberto.</p>') +
+    '<p class="g-rodape" style="margin-top:auto">Próximo passo planejado: imóveis, veículos e investimentos detalhados, para o patrimônio completo da família.</p></section></div>';
+  return h;
+}
+
+/* ============================================================================
+ * Importar extrato
+ * ========================================================================== */
+
+function telaImportarG() {
+  const im = S.imp;
+  let h = cabecalhoGrande('Importar extrato', null, '', '<span class="topo-mini">CSV ou OFX do banco ou da fatura do cartão</span>');
+  const contas = S.boot.contas.filter(c => c.tipo !== 'emprestimo');
+  const destino = '<optgroup label="Contas">' + contas.map(c => '<option value="c:' + esc(c.id) + '"' + (im.tipo === 'conta' && im.id === c.id ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</optgroup>' +
+    '<optgroup label="Cartões">' + S.boot.cartoes.map(c => '<option value="k:' + esc(c.id) + '"' + (im.tipo === 'cartao' && im.id === c.id ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('') + '</optgroup>';
+  h += '<section class="g-cartao"><div class="g-imp-passos">' +
+    '<div class="g-imp-passo"><span class="g-num-passo">1</span><label for="imp-destino">Para onde vão os lançamentos</label><select id="imp-destino" class="g-select g-select-largo"><option value="">escolha a conta ou o cartão…</option>' + destino + '</select></div>' +
+    '<div class="g-imp-passo"><span class="g-num-passo">2</span><label for="imp-arquivo">Arquivo do extrato</label><input id="imp-arquivo" type="file" accept=".csv,.ofx,.txt,text/csv">' +
+    (im.nomeArquivo ? '<span class="g-suave g-pequeno">' + esc(im.nomeArquivo) + '</span>' : '') + '</div>' +
+    '<div class="g-imp-passo"><span class="g-num-passo">3</span><button type="button" class="btn btn-primario btn-pequeno" data-acao="imp-ler"' + (im.texto ? '' : ' disabled') + '>Ler o arquivo</button></div></div>' +
+    '<p class="g-rodape" style="margin:0">Nada é gravado antes de você conferir. O que já aconteceu entra na fila <b>Revisar</b>; parcelas futuras entram como agendadas. Linhas iguais às que já existem vêm desmarcadas.</p></section>';
+  if (im.linhas) {
+    const marc = im.marcadas;
+    const n = im.linhas.filter(l => marc.has(l.i)).length;
+    const total = im.linhas.filter(l => marc.has(l.i)).reduce((t, l) => t + l.valor, 0);
+    const dups = im.linhas.filter(l => l.duplicado).length;
+    h += '<div class="g-lote"><b>' + n + ' de ' + im.linhas.length + ' marcadas · ' + sinal(total) + '</b>' + (dups ? '<span>' + dups + ' já existiam</span>' : '') + '<span class="g-espaco"></span>' +
+      '<button type="button" class="btn btn-primario btn-pequeno" data-acao="imp-importar"' + (n ? '' : ' disabled') + '>Importar ' + n + '</button>' +
+      '<button type="button" class="btn btn-lote-limpar btn-pequeno" data-acao="imp-limpar">Cancelar</button></div>';
+    h += '<div class="g-cartao g-sem-pad"><table class="g-tabela"><thead><tr><th class="g-col-check"><input type="checkbox" data-imp-todos aria-label="Marcar todas"' + (n === im.linhas.length ? ' checked' : '') + '></th>' +
+      '<th>Data</th><th>Descrição</th><th>Categoria</th><th class="num">Valor</th></tr></thead><tbody>' +
+      im.linhas.map(l => '<tr class="g-sem-clique' + (l.duplicado ? ' g-dup' : '') + '"><td class="g-col-check"><input type="checkbox" data-imp="' + l.i + '" aria-label="Importar ' + esc(l.descricao) + '"' + (marc.has(l.i) ? ' checked' : '') + '></td>' +
+        '<td class="g-suave">' + esc(dataCurta(l.data)) + '</td>' +
+        '<td><b>' + esc(l.descricao) + '</b>' + (l.parcela_total ? ' <span class="g-suave g-pequeno">' + l.parcela_atual + '/' + l.parcela_total + '</span>' : '') +
+        (l.duplicado ? '<br><span class="g-alerta g-pequeno">' + (l.parecido ? 'parece já lançado: ' : 'já existe: ') + esc(l.dup) + '</span>' : '') + (l.pagamento ? '<br><span class="g-suave g-pequeno">parece pagamento de fatura</span>' : '') + '</td>' +
+        '<td><label class="sr" for="imp-cat-' + l.i + '">Categoria</label><select id="imp-cat-' + l.i + '" class="g-select" data-imp-cat="' + l.i + '">' + opcoesCategorias(l.valor > 0 ? 'receita' : 'despesa', l.categoria) + '</select></td>' +
+        '<td class="num"><b class="' + (l.valor > 0 ? 'positivo' : '') + '">' + sinal(l.valor) + '</b></td></tr>').join('') + '</tbody></table></div>';
+  }
+  return h;
+}
+
+/* ============================================================================
+ * Fechamento
+ * ========================================================================== */
+
+function telaFechamentoG() {
+  let h = cabecalhoGrande('Fechamento', null, '', '<span class="topo-mini">confira o saldo de cada conta com o app do banco</span>');
+  const d = S.fechDados;
+  if (S.erro_fechamento && !d) return h + falhaTela(S.erro_fechamento);
+  if (!d) return h + esqueleto([300]);
+  h += '<section class="g-cartao"><p class="g-rodape" style="margin:0">Uma vez por mês (ou na reunião), abra o app do banco e digite o saldo real. Se for diferente, o FlowFinance mostra a diferença e pode lançar um ajuste para os dois baterem. Diferença grande costuma ser lançamento esquecido: vale procurar antes de ajustar.</p>' +
+    '<table class="g-tabela"><thead><tr><th>Conta</th><th class="num">Saldo no FlowFinance</th><th>Último fechamento</th><th class="num">Saldo no banco hoje</th><th class="num">Diferença</th><th></th></tr></thead><tbody>' +
+    d.contas.map(c => '<tr class="g-sem-clique" data-fech-linha="' + esc(c.id) + '"><td><b>' + esc(c.nome) + '</b></td><td class="num">' + brl(c.saldo_sistema) + '</td>' +
+      '<td class="g-suave">' + (c.ultimo ? esc(dataCurta(c.ultimo.data)) + ' · ' + brl(c.ultimo.saldo_real) : 'nunca') + '</td>' +
+      '<td class="num"><label class="sr" for="fech-' + esc(c.id) + '">Saldo real de ' + esc(c.nome) + '</label><input class="g-input-num" id="fech-' + esc(c.id) + '" data-fech="' + esc(c.id) + '" data-sistema="' + c.saldo_sistema + '" inputmode="decimal" placeholder="0,00"></td>' +
+      '<td class="num" data-dif="' + esc(c.id) + '"><span class="g-suave">—</span></td>' +
+      '<td class="num"><button type="button" class="btn btn-secundario btn-pequeno" data-fechar="' + esc(c.id) + '" disabled>Registrar</button></td></tr>').join('') + '</tbody></table></section>';
+  if (d.historico.length) {
+    h += '<section class="g-cartao"><h2>Últimos fechamentos</h2><table class="g-tabela"><thead><tr><th>Data</th><th>Conta</th><th class="num">Saldo no banco</th></tr></thead><tbody>' +
+      d.historico.map(f => '<tr class="g-sem-clique"><td class="g-suave">' + esc(dataCurta(f.data)) + '</td><td>' + esc(f.conta) + '</td><td class="num">' + brl(f.saldo_real) + '</td></tr>').join('') + '</tbody></table></section>';
+  }
+  return h;
+}
+
+/* ============================================================================
+ * Configurações
+ * ========================================================================== */
+
+const CFG_ABAS = [['contas', 'Contas'], ['cartoes', 'Cartões'], ['categorias', 'Categorias'], ['regras', 'Regras'], ['recorrencias', 'Recorrentes'], ['pessoas', 'Pessoas e acesso'], ['sistema', 'Sistema']];
+const TIPOS_CONTA = [['corrente', 'Conta corrente'], ['poupanca', 'Poupança'], ['vale', 'Vale (VR/VA)'], ['dinheiro', 'Dinheiro'], ['investimento', 'Investimento'], ['emprestimo', 'Empréstimo'], ['outra', 'Outra']];
+const PERIODOS = [['mensal', 'Todo mês'], ['semanal', 'Toda semana'], ['anual', 'Todo ano'], ['diaria', 'Todo dia']];
+
+function telaConfigG() {
+  const abas = '<div class="segmento g-seg g-seg-cfg" role="tablist" aria-label="Seção" style="--n:' + CFG_ABAS.length + '">' + CFG_ABAS.map(a =>
+    '<button type="button" role="tab" data-cfg="' + a[0] + '" aria-pressed="' + (S.cfgAba === a[0]) + '" aria-selected="' + (S.cfgAba === a[0]) + '">' + esc(a[1]) + '</button>').join('') + '</div>';
+  let h = cabecalhoGrande('Configurações', null, '', '');
+  h += abas;
+  const d = S.cfgDados;
+  if (S.erro_config && !d) return h + falhaTela(S.erro_config);
+  if (!d) return h + esqueleto([320]);
+  const sec = S.cfgAba;
+  if (sec === 'contas') h += cfgContas(d);
+  else if (sec === 'cartoes') h += cfgCartoes(d);
+  else if (sec === 'categorias') h += cfgCategorias(d);
+  else if (sec === 'regras') h += cfgRegras(d);
+  else if (sec === 'recorrencias') h += cfgRecorrencias(d);
+  else if (sec === 'pessoas') h += cfgPessoas(d);
+  else h += cfgSistema(d);
+  return h;
+}
+
+function cfgCabecalho(titulo, texto, botao, acao) {
+  return '<div class="g-entre"><div><h2>' + esc(titulo) + '</h2>' + (texto ? '<p class="g-rodape" style="margin:2px 0 0">' + texto + '</p>' : '') + '</div>' +
+    (botao ? '<button type="button" class="btn btn-primario btn-pequeno" data-cfg-novo="' + acao + '">' + esc(botao) + '</button>' : '') + '</div>';
+}
+
+function cfgContas(d) {
+  return '<section class="g-cartao">' + cfgCabecalho('Contas', 'Contas correntes, poupança, vales, investimentos. Use o padrão "NN tipo BANCO" (ex.: 01 cc IT) que o bot reconhece.', 'Nova conta', 'conta') +
+    '<table class="g-tabela"><thead><tr><th>Conta</th><th>Tipo</th><th class="num">Saldo hoje</th><th>Marcações</th><th class="num">Lançamentos</th></tr></thead><tbody>' +
+    d.contas.map(c => '<tr data-cfg-item="conta" data-id="' + esc(c.id) + '" tabindex="0" class="' + (c.ativo ? '' : 'g-inativo') + '"><td><b>' + esc(c.nome) + '</b>' + (c.banco ? '<br><span class="g-suave g-pequeno">' + esc(c.banco) + '</span>' : '') + '</td>' +
+      '<td>' + esc((TIPOS_CONTA.find(t => t[0] === c.tipo) || [0, c.tipo])[1]) + '</td><td class="num">' + brl(c.saldo) + '</td>' +
+      '<td>' + (c.reserva ? '<span class="g-tag">reserva</span> ' : '') + (c.ativo ? '' : '<span class="g-tag">desativada</span>') + '</td><td class="num g-suave">' + c.usos + '</td></tr>').join('') + '</tbody></table></section>';
+}
+
+function cfgCartoes(d) {
+  return '<section class="g-cartao">' + cfgCabecalho('Cartões de crédito', 'O dia de fechamento define em qual fatura cada compra cai.', 'Novo cartão', 'cartao') +
+    '<table class="g-tabela"><thead><tr><th>Cartão</th><th>Fecha</th><th>Vence</th><th>Pago pela conta</th><th class="num">Limite</th><th class="num">Lançamentos</th></tr></thead><tbody>' +
+    d.cartoes.map(c => '<tr data-cfg-item="cartao" data-id="' + esc(c.id) + '" tabindex="0" class="' + (c.ativo ? '' : 'g-inativo') + '"><td><b>' + esc(c.nome) + '</b>' + (c.ativo ? '' : ' <span class="g-tag">desativado</span>') + '</td>' +
+      '<td>dia ' + c.dia_fechamento + '</td><td>dia ' + c.dia_vencimento + '</td><td>' + esc(c.conta_nome || '—') + '</td><td class="num">' + (c.limite ? brl(c.limite) : '—') + '</td><td class="num g-suave">' + c.usos + '</td></tr>').join('') + '</tbody></table></section>';
+}
+
+function cfgCategorias(d) {
+  const tipos = [['despesa', 'Despesas'], ['receita', 'Receitas']];
+  let h = '<section class="g-cartao">' + cfgCabecalho('Categorias', 'Dois níveis: principal e subcategorias. Poucas categorias principais (10 a 12) deixam a reunião mais fácil. Marque como <b>fixa</b> o que vem todo mês quase igual.', 'Nova categoria', 'categoria') + '<div class="g-grade-2">';
+  tipos.forEach(t => {
+    const pais = d.categorias.filter(c => c.tipo === t[0] && !c.pai).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    h += '<div><h3 class="g-h3">' + t[1] + '</h3>' + pais.map(p => {
+      const filhas = d.categorias.filter(c => c.pai === p.id).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      return '<div class="g-cat-grupo"><button type="button" class="g-cat-btn g-cat-pai" data-cfg-item="categoria" data-id="' + esc(p.id) + '"><b>' + esc(p.nome) + '</b>' +
+        (p.natureza === 'fixa' ? ' <span class="g-tag">fixa</span>' : '') + '<span class="g-suave g-pequeno">' + p.usos + '</span></button>' +
+        filhas.map(f => '<button type="button" class="g-cat-btn" data-cfg-item="categoria" data-id="' + esc(f.id) + '"><span>' + esc(f.nome) + '</span><span class="g-suave g-pequeno">' + f.usos + '</span></button>').join('') + '</div>';
+    }).join('') + '</div>';
+  });
+  return h + '</div><p class="g-rodape">O número ao lado é quantos lançamentos usam a categoria.</p></section>';
+}
+
+function cfgRegras(d) {
+  return '<section class="g-cartao">' + cfgCabecalho('Regras de categoria', 'Quando a descrição contém o texto, o FlowFinance já sugere a categoria (no app, no bot, nas notificações e na importação). As que vêm de correções suas têm prioridade 10.', 'Nova regra', 'regra') +
+    (d.regras.length ? '<table class="g-tabela"><thead><tr><th>Se a descrição contém</th><th>Categoria</th><th class="num">Prioridade</th><th></th></tr></thead><tbody>' +
+      d.regras.map(r => '<tr data-cfg-item="regra" data-id="' + esc(r.id) + '" tabindex="0" class="' + (r.ativo ? '' : 'g-inativo') + '"><td><b>' + esc(r.valor) + '</b>' + (r.operador !== 'contains' ? ' <span class="g-suave g-pequeno">(' + esc(r.operador) + ')</span>' : '') + '</td>' +
+        '<td>' + esc(r.destino_nome) + '</td><td class="num g-suave">' + r.prioridade + '</td><td>' + (r.ativo ? '' : '<span class="g-tag">desativada</span>') + '</td></tr>').join('') + '</tbody></table>'
+      : '<p class="g-vazio">Nenhuma regra ainda. Ao trocar a categoria sugerida, o app e o bot criam regras sozinhos.</p>') + '</section>';
+}
+
+function cfgRecorrencias(d) {
+  return '<section class="g-cartao">' + cfgCabecalho('Contas fixas e recorrentes', 'Salário, condomínio, escola, assinaturas. Elas geram os lançamentos dos próximos 12 meses como "a pagar"/"agendado", que entram no saldo projetado e no Planejamento.', 'Nova recorrência', 'recorrencia') +
+    (d.recorrencias.length ? '<table class="g-tabela"><thead><tr><th>Descrição</th><th>Quando</th><th>Conta ou cartão</th><th>Categoria</th><th>Próxima</th><th class="num">Valor</th></tr></thead><tbody>' +
+      d.recorrencias.map(r => '<tr data-cfg-item="recorrencia" data-id="' + esc(r.id) + '" tabindex="0" class="' + (r.ativo ? '' : 'g-inativo') + '"><td><b>' + esc(r.descricao) + '</b>' + (r.ativo ? '' : ' <span class="g-tag">parada</span>') + '</td>' +
+        '<td>' + esc((PERIODOS.find(x => x[0] === r.periodicidade) || [0, r.periodicidade])[1]) + (r.periodicidade === 'mensal' ? ', dia ' + r.dia : '') + '</td>' +
+        '<td>' + esc(r.pagamento_nome || '—') + '</td><td>' + esc(r.categoria_nome || '—') + '</td><td class="g-suave">' + (r.ativo && r.proxima_data ? esc(dataCurta(r.proxima_data)) : '—') + '</td>' +
+        '<td class="num"><b class="' + (r.valor > 0 ? 'positivo' : '') + '">' + sinal(r.valor) + '</b></td></tr>').join('') + '</tbody></table>'
+      : '<p class="g-vazio">Nenhuma recorrência.</p>') + '</section>';
+}
+
+function cfgPessoas(d) {
+  const nomes = d.usuarios_app || {};
+  const emails = {};
+  Object.keys(nomes).forEach(e => { emails[e] = true; });
+  (d.auth || []).forEach(u => { emails[String(u.email).toLowerCase()] = true; });
+  return '<div class="g-grade-2"><section class="g-cartao">' + cfgCabecalho('Quem usa o FlowFinance', 'Cada conta Google com acesso e o nome que aparece em "quem" (use o mesmo nome do bot).', 'Adicionar pessoa', 'pessoa') +
+    '<table class="g-tabela"><thead><tr><th>Conta Google</th><th>Nome</th><th>Senha do app</th></tr></thead><tbody>' +
+    Object.keys(emails).sort().map(e => '<tr data-cfg-item="pessoa" data-id="' + esc(e) + '" tabindex="0"><td>' + esc(e) + (e === String(d.email).toLowerCase() ? ' <span class="g-tag">você</span>' : '') + '</td>' +
+      '<td>' + esc(nomes[e] || '—') + '</td><td>' + ((d.auth || []).some(u => String(u.email).toLowerCase() === e) ? 'tem acesso' : '<span class="g-alerta">sem acesso</span>') + '</td></tr>').join('') + '</tbody></table>' +
+    '<p class="g-rodape">Para outra pessoa abrir o app, a implantação do web app também precisa permitir a conta dela (hoje está "Somente eu"). Fazemos isso juntos quando for incluir sua esposa.</p></section>' +
+    '<section class="g-cartao"><h2>Sua senha</h2><div class="campos">' +
+    '<div class="campo"><label for="senha-atual">Senha atual</label><input id="senha-atual" type="password" autocomplete="current-password"></div>' +
+    '<div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password"></div></div>' +
+    '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="trocar-senha" style="align-self:flex-start">Trocar senha</button>' +
+    '<h2 style="margin-top:14px">Travar depois de</h2><div class="g-entre" style="justify-content:flex-start;gap:8px"><label class="sr" for="cfg-timeout">Minutos</label><input id="cfg-timeout" class="g-input-num" inputmode="numeric" value="' + d.timeout + '"><span class="g-suave">minutos sem usar</span>' +
+    '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="salvar-timeout">Salvar</button></div></section></div>';
+}
+
+function cfgSistema(d) {
+  const cal = d.calendario;
+  return '<div class="g-grade-2"><section class="g-cartao"><h2>Google Agenda</h2>' +
+    '<p class="g-rodape" style="margin:0">Contas "a pagar" viram lembretes num calendário FlowFinance.</p>' +
+    '<label class="g-check g-check-form"><input type="checkbox" id="cal-auto"' + (cal && cal.autoSync ? ' checked' : '') + '><span>Atualizar a agenda sozinho ao salvar<small>' +
+    (cal && cal.initialized ? 'Calendário: ' + esc(cal.calendarName) : 'O calendário é criado na primeira sincronização') + '</small></span></label>' +
+    '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="sincronizar-agenda" style="align-self:flex-start">Sincronizar os próximos 90 dias agora</button></section>' +
+    '<section class="g-cartao"><h2>Manutenção</h2>' +
+    '<div class="g-manut"><div><b>Aplicar regras nos lançamentos sem categoria</b><span class="g-rodape">Preenche só o que está vazio; nada é sobrescrito.</span></div><button type="button" class="btn btn-secundario btn-pequeno" data-acao="aplicar-regras">Aplicar</button></div>' +
+    '<div class="g-manut"><div><b>Limpar o cache</b><span class="g-rodape">Use se algo editado direto na planilha não aparecer.</span></div><button type="button" class="btn btn-secundario btn-pequeno" data-acao="limpar-cache">Limpar</button></div>' +
+    '<div class="g-manut"><div><b>Abrir a planilha</b><span class="g-rodape">Os dados ficam numa planilha sua no Google Drive.</span></div>' + (S.boot.url_planilha ? '<a class="btn btn-secundario btn-pequeno" href="' + esc(S.boot.url_planilha) + '" target="_blank" rel="noopener">Abrir</a>' : '') + '</div>' +
+    '<div class="g-manut"><div><b>App antigo</b><span class="g-rodape">Continua disponível por segurança enquanto vocês se acostumam.</span></div><a class="btn btn-secundario btn-pequeno" href="' + esc(urlClassico('')) + '" target="_top">Abrir</a></div>' +
+    '</section></div>';
+}
+
+/* Formulários de cada cadastro */
+
+function opcoesContasLista(sel, vazio) {
+  return [['', vazio || 'nenhuma']].concat(S.cfgDados.contas.filter(c => c.ativo && c.tipo !== 'emprestimo').map(c => [c.id, c.nome]));
+}
+function opcoesCategoriasLista(tipo) {
+  const d = S.cfgDados;
+  const pais = d.categorias.filter(c => !c.pai && (!tipo || c.tipo === tipo)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return pais.map(p => ({ grupo: p.nome, itens: [[p.id, p.nome + ' (geral)']].concat(d.categorias.filter(c => c.pai === p.id).map(c => [c.id, c.nome])) }));
+}
+
+function abrirCfg(tipo, id) {
+  const d = S.cfgDados;
+  if (tipo === 'conta') {
+    const c = d.contas.find(x => x.id === id) || { tipo: 'corrente', ativo: true, data_saldo_inicial: hojeISO(), saldo_inicial: 0 };
+    formPainel(id ? 'Editar conta' : 'Nova conta', [
+      { id: 'nome', rotulo: 'Nome', valor: c.nome || '', placeholder: '01 cc IT' },
+      { id: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: TIPOS_CONTA, valor: c.tipo },
+      { id: 'banco', rotulo: 'Banco', valor: c.banco || '' },
+      { id: 'saldo_inicial', rotulo: 'Saldo inicial', tipo: 'num', valor: c.saldo_inicial },
+      { id: 'data_saldo_inicial', rotulo: 'Na data', tipo: 'date', valor: c.data_saldo_inicial || hojeISO() },
+      { id: 'reserva', rotulo: 'É reserva de emergência', tipo: 'check', valor: c.reserva, dica: 'conta para o indicador de reserva' },
+      { id: 'ativo', rotulo: 'Ativa', tipo: 'check', valor: c.ativo !== false, dica: 'desative em vez de excluir quando já tem lançamentos' }
+    ], v => run('appSalvarConta', Object.assign({ id: id }, v)).then(() => 'Conta salva.'),
+    id ? () => run('appExcluirCadastro', 'conta', id).then(() => 'Conta excluída.') : null,
+    'O saldo inicial é o saldo da conta no banco na data escolhida; tudo depois disso vem dos lançamentos.');
+  } else if (tipo === 'cartao') {
+    const c = d.cartoes.find(x => x.id === id) || { ativo: true, dia_fechamento: 1, dia_vencimento: 10 };
+    formPainel(id ? 'Editar cartão' : 'Novo cartão', [
+      { id: 'nome', rotulo: 'Nome', valor: c.nome || '', placeholder: '41 cred XP' },
+      { id: 'conta_pagamento', rotulo: 'Pago pela conta', tipo: 'select', opcoes: opcoesContasLista(c.conta_pagamento, 'escolha…'), valor: c.conta_pagamento || '' },
+      { id: 'dia_fechamento', rotulo: 'Dia que fecha', valor: c.dia_fechamento },
+      { id: 'dia_vencimento', rotulo: 'Dia que vence', valor: c.dia_vencimento },
+      { id: 'limite', rotulo: 'Limite', tipo: 'num', valor: c.limite || '' },
+      { id: 'ativo', rotulo: 'Ativo', tipo: 'check', valor: c.ativo !== false }
+    ], v => run('appSalvarCartao', Object.assign({ id: id }, v)).then(() => 'Cartão salvo.'),
+    id ? () => run('appExcluirCadastro', 'cartao', id).then(() => 'Cartão excluído.') : null);
+  } else if (tipo === 'categoria') {
+    const c = d.categorias.find(x => x.id === id) || { tipo: 'despesa', pai: '' };
+    const pais = [['', '— é uma categoria principal —']].concat(d.categorias.filter(x => !x.pai && x.id !== id).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(x => [x.id, x.nome + (x.tipo === 'receita' ? ' (receita)' : '')]));
+    const campos = [
+      { id: 'nome', rotulo: 'Nome', valor: c.nome || '' },
+      { id: 'pai', rotulo: 'Dentro de', tipo: 'select', opcoes: pais, valor: c.pai || '' },
+      { id: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['despesa', 'Despesa'], ['receita', 'Receita']], valor: c.tipo, dica: 'subcategoria segue o tipo da principal' },
+      { id: 'fixa', rotulo: 'Custo fixo', tipo: 'check', valor: c.natureza === 'fixa', dica: 'vem todo mês quase igual (só para categorias principais)' }
+    ];
+    let excluir = null;
+    if (id) {
+      excluir = function (v, folha) {
+        if (!c.usos) return run('appExcluirCadastro', 'categoria', id, '').then(() => 'Categoria excluída.');
+        const sel = folha.querySelector('#pf-mover');
+        if (!sel || !sel.value) {
+          if (!sel) {
+            const div = document.createElement('div');
+            div.className = 'campos'; div.style.marginTop = '12px';
+            div.innerHTML = '<div class="campo"><label for="pf-mover">Mover os ' + c.usos + ' lançamentos para</label><select id="pf-mover"><option value="">escolha…</option>' +
+              opcoesCategoriasLista(c.tipo).map(g => '<optgroup label="' + esc(g.grupo) + '">' + g.itens.filter(x => x[0] !== id).map(x => '<option value="' + esc(x[0]) + '">' + esc(x[1]) + '</option>').join('') + '</optgroup>').join('') + '</select></div>';
+            folha.querySelector('.botoes').before(div);
+          }
+          return Promise.reject(new Error('Escolha para onde mover os lançamentos e toque em Excluir de novo.'));
+        }
+        return run('appExcluirCadastro', 'categoria', id, sel.value).then(r => 'Categoria excluída; ' + r.movidos + ' lançamentos movidos.');
+      };
+    }
+    formPainel(id ? 'Editar categoria' : 'Nova categoria', campos,
+      v => run('appSalvarCategoria', { id: id, nome: v.nome, pai: v.pai, tipo: v.tipo, natureza: v.fixa ? 'fixa' : 'variavel' }).then(() => 'Categoria salva.'),
+      excluir, c.usos ? 'Usada em ' + c.usos + ' lançamentos.' : '');
+  } else if (tipo === 'regra') {
+    const r = d.regras.find(x => x.id === id) || { prioridade: 10, ativo: true };
+    formPainel(id ? 'Editar regra' : 'Nova regra', [
+      { id: 'valor', rotulo: 'Descrição contém', valor: r.valor || '', placeholder: 'NORDESTAO', dica: 'sem acento; maiúsculas não importam' },
+      { id: 'destino', rotulo: 'Categoria', tipo: 'select', opcoes: [['', 'escolha…']].concat(opcoesCategoriasLista('')), valor: r.destino || '' },
+      { id: 'prioridade', rotulo: 'Prioridade', valor: r.prioridade, dica: 'maior vence quando duas regras servem' },
+      { id: 'ativo', rotulo: 'Ativa', tipo: 'check', valor: r.ativo !== false }
+    ], v => run('appSalvarRegra', Object.assign({ id: id }, v)).then(() => 'Regra salva.'),
+    id ? () => run('appExcluirRegra', id).then(() => 'Regra excluída.') : null);
+  } else if (tipo === 'recorrencia') {
+    const r = d.recorrencias.find(x => x.id === id) || { periodicidade: 'mensal', dia: Number(hojeISO().slice(8, 10)), proxima_data: hojeISO(), ativo: true, valor: 0 };
+    const pag = r.cartao ? 'k:' + r.cartao : (r.conta ? 'c:' + r.conta : '');
+    const pagOpcoes = [['', 'escolha…'], { grupo: 'Contas', itens: d.contas.filter(c => c.ativo && c.tipo !== 'emprestimo').map(c => ['c:' + c.id, c.nome]) },
+      { grupo: 'Cartões', itens: d.cartoes.filter(c => c.ativo).map(c => ['k:' + c.id, c.nome]) }];
+    formPainel(id ? 'Editar recorrência' : 'Nova recorrência', [
+      { id: 'descricao', rotulo: 'Descrição', valor: r.descricao || '', placeholder: 'Condomínio' },
+      { id: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['despesa', 'Despesa'], ['receita', 'Receita']], valor: r.valor > 0 ? 'receita' : 'despesa' },
+      { id: 'valor', rotulo: 'Valor', tipo: 'num', valor: r.valor ? Math.abs(r.valor) : '' },
+      { id: 'pag', rotulo: 'Conta ou cartão', tipo: 'select', opcoes: pagOpcoes, valor: pag },
+      { id: 'categoria', rotulo: 'Categoria', tipo: 'select', opcoes: [['', 'sem categoria']].concat(opcoesCategoriasLista('')), valor: r.categoria || '' },
+      { id: 'periodicidade', rotulo: 'Repete', tipo: 'select', opcoes: PERIODOS, valor: r.periodicidade },
+      { id: 'dia', rotulo: 'Dia do mês', valor: r.dia },
+      { id: 'proxima_data', rotulo: 'Próxima vez', tipo: 'date', valor: r.proxima_data || hojeISO() },
+      { id: 'ativo', rotulo: 'Ativa', tipo: 'check', valor: r.ativo !== false, dica: 'parar apaga os lançamentos futuros ainda não pagos' }
+    ], v => {
+      const k = v.pag || '';
+      return run('appSalvarRecorrencia', {
+        id: id, descricao: v.descricao, tipo: v.tipo, valor: Math.abs(v.valor), conta: k.indexOf('c:') === 0 ? k.slice(2) : '',
+        cartao: k.indexOf('k:') === 0 ? k.slice(2) : '', categoria: v.categoria, periodicidade: v.periodicidade, dia: v.dia,
+        proxima_data: v.proxima_data, ativo: v.ativo
+      }).then(x => x.refeitos ? 'Salva; lançamentos futuros refeitos com a nova data.' : (x.futuros_atualizados ? 'Salva; ' + x.futuros_atualizados + ' lançamentos futuros atualizados.' : 'Recorrência salva.'));
+    }, id ? () => run('appExcluirRecorrencia', id).then(x => 'Excluída; ' + x.futuros_removidos + ' lançamentos futuros removidos.') : null,
+    'Mudar valor ou categoria atualiza os lançamentos futuros ainda não pagos. Mudar a data refaz esses lançamentos.');
+  } else if (tipo === 'pessoa') {
+    const nome = (d.usuarios_app || {})[id] || '';
+    const temAcesso = (d.auth || []).some(u => String(u.email).toLowerCase() === id);
+    const campos = [{ id: 'email', rotulo: 'Conta Google', valor: id || '', placeholder: 'nome@gmail.com' }, { id: 'nome', rotulo: 'Nome', valor: nome }];
+    if (!temAcesso) campos.push({ id: 'senha', rotulo: 'Senha inicial', valor: '', dica: 'mínimo 4 caracteres; ela troca depois' });
+    formPainel(id ? 'Pessoa' : 'Adicionar pessoa', campos, v => {
+      const email = String(v.email || '').trim().toLowerCase();
+      let p = run('appSalvarPessoa', email, v.nome);
+      if (!temAcesso && v.senha) p = p.then(() => run('addAuthUser', email, v.senha)).then(r => { if (!r.ok) throw new Error(r.error); });
+      return p.then(() => 'Salvo.');
+    }, (id && temAcesso && id !== String(d.email).toLowerCase()) ? () => run('removeAuthUser', id).then(r => { if (!r.ok) throw new Error(r.error); return 'Acesso removido.'; }) : null);
+  }
+}
+
+/* ============================================================================
+ * Eventos
+ * ========================================================================== */
+
+function ligarTelaG3(tela) {
+  // Configurações
+  tela.querySelectorAll('[data-cfg]').forEach(b => { b.onclick = function () { S.cfgAba = b.dataset.cfg; desenhar(); }; });
+  tela.querySelectorAll('[data-cfg-novo]').forEach(b => { b.onclick = function () { abrirCfg(b.dataset.cfgNovo, ''); }; });
+  tela.querySelectorAll('[data-cfg-item]').forEach(el => {
+    const abrir = function () { abrirCfg(el.dataset.cfgItem, el.dataset.id); };
+    el.onclick = abrir;
+    if (el.tagName === 'TR') el.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+  const ts = tela.querySelector('[data-acao="trocar-senha"]');
+  if (ts) ts.onclick = function () {
+    ts.disabled = true;
+    run('changeMyPassword', tela.querySelector('#senha-atual').value, tela.querySelector('#senha-nova').value)
+      .then(r => { ts.disabled = false; if (!r.ok) throw new Error(r.error); aviso('Senha trocada.'); tela.querySelector('#senha-atual').value = ''; tela.querySelector('#senha-nova').value = ''; })
+      .catch(e => { ts.disabled = false; erro(e); });
+  };
+  const st = tela.querySelector('[data-acao="salvar-timeout"]');
+  if (st) st.onclick = function () { run('setAuthTimeout', textoParaNumero(tela.querySelector('#cfg-timeout').value)).then(r => aviso('Trava depois de ' + r.timeout_minutes + ' minutos.')).catch(erro); };
+  const ca = tela.querySelector('#cal-auto');
+  if (ca) ca.onchange = function () { run('setCalendarAutoSync', ca.checked).then(() => aviso(ca.checked ? 'Agenda automática ligada.' : 'Agenda automática desligada.')).catch(erro); };
+  const sa = tela.querySelector('[data-acao="sincronizar-agenda"]');
+  if (sa) sa.onclick = function () { sa.disabled = true; run('sincronizarContasAPagar', 90).then(r => { sa.disabled = false; aviso('Agenda: ' + r.criados + ' criados, ' + r.atualizados + ' atualizados, ' + r.removidos + ' removidos.'); invalidar(); }).catch(e => { sa.disabled = false; erro(e); }); };
+  const ar = tela.querySelector('[data-acao="aplicar-regras"]');
+  if (ar) ar.onclick = function () { ar.disabled = true; run('aplicarRegrasEmTodos').then(r => { ar.disabled = false; aviso(r.atualizados + ' lançamentos categorizados.'); invalidar(); }).catch(e => { ar.disabled = false; erro(e); }); };
+  const lc = tela.querySelector('[data-acao="limpar-cache"]');
+  if (lc) lc.onclick = function () { run('clearAllCaches').then(() => { aviso('Cache limpo.'); invalidar(); }).catch(erro); };
+
+  // Importar
+  const im = S.imp;
+  const dest = tela.querySelector('#imp-destino');
+  if (dest) dest.onchange = function () {
+    const v = dest.value;
+    im.tipo = v.indexOf('k:') === 0 ? 'cartao' : 'conta'; im.id = v.slice(2); im.linhas = null; desenhar();
+  };
+  const arq = tela.querySelector('#imp-arquivo');
+  if (arq) arq.onchange = function () {
+    const f = arq.files && arq.files[0];
+    if (!f) return;
+    const leitor = new FileReader();
+    leitor.onload = function () {
+      let texto = String(leitor.result || '');
+      // Extratos de banco às vezes vêm em Latin-1: se aparecer "�", relê assim
+      if (texto.indexOf('�') !== -1) {
+        const l2 = new FileReader();
+        l2.onload = function () { im.texto = String(l2.result || ''); im.nomeArquivo = f.name; im.linhas = null; desenhar(); };
+        l2.readAsText(f, 'ISO-8859-1');
+        return;
+      }
+      im.texto = texto; im.nomeArquivo = f.name; im.linhas = null; desenhar();
+    };
+    leitor.readAsText(f, 'UTF-8');
+  };
+  const ler = tela.querySelector('[data-acao="imp-ler"]');
+  if (ler) ler.onclick = function () {
+    if (!im.id) { aviso('Escolha a conta ou o cartão.', { erro: true }); return; }
+    ler.disabled = true; ler.textContent = 'Lendo…';
+    run('appPreviewImportacao', im.texto, im.tipo, im.id).then(function (r) {
+      im.linhas = r.linhas; im.formato = r.formato;
+      im.marcadas = new Set(r.linhas.filter(l => !l.duplicado && !l.pagamento).map(l => l.i));
+      if (!r.linhas.length) aviso('Não encontrei lançamentos nesse arquivo. Confira se é CSV ou OFX do banco.', { erro: true });
+      desenhar();
+    }).catch(function (e) { ler.disabled = false; ler.textContent = 'Ler o arquivo'; erro(e); });
+  };
+  tela.querySelectorAll('[data-imp]').forEach(cb => {
+    cb.onchange = function () { const i = Number(cb.dataset.imp); if (cb.checked) im.marcadas.add(i); else im.marcadas.delete(i); desenhar(); };
+  });
+  const todos = tela.querySelector('[data-imp-todos]');
+  if (todos) todos.onchange = function () { im.marcadas = todos.checked ? new Set(im.linhas.map(l => l.i)) : new Set(); desenhar(); };
+  tela.querySelectorAll('[data-imp-cat]').forEach(sel => {
+    sel.onchange = function () { const l = im.linhas.find(x => x.i === Number(sel.dataset.impCat)); if (l) l.categoria = sel.value; };
+  });
+  const imp = tela.querySelector('[data-acao="imp-importar"]');
+  if (imp) imp.onclick = function () {
+    const linhas = im.linhas.filter(l => im.marcadas.has(l.i));
+    imp.disabled = true; imp.textContent = 'Importando…';
+    run('appImportar', im.tipo, im.id, linhas).then(function (r) {
+      aviso(r.importados + ' lançamentos importados' + (r.parcelas_futuras ? ' (' + r.parcelas_futuras + ' parcelas futuras)' : '') + '. Confira em Revisar.');
+      S.imp = { tipo: im.tipo, id: im.id, texto: '', nomeArquivo: '', linhas: null, marcadas: null, formato: '' };
+      S.inicio = null;
+      invalidar(); desenhar();
+    }).catch(function (e) { imp.disabled = false; erro(e); desenhar(); });
+  };
+  const limpar = tela.querySelector('[data-acao="imp-limpar"]');
+  if (limpar) limpar.onclick = function () { S.imp.linhas = null; S.imp.texto = ''; S.imp.nomeArquivo = ''; desenhar(); };
+
+  // Fechamento
+  tela.querySelectorAll('[data-fech]').forEach(inp => {
+    inp.oninput = function () {
+      const id = inp.dataset.fech;
+      const real = textoParaNumero(inp.value) * (inp.value.trim().charAt(0) === '-' ? -1 : 1);
+      const td = tela.querySelector('[data-dif="' + id + '"]');
+      const bt = tela.querySelector('[data-fechar="' + id + '"]');
+      if (!inp.value.trim()) { td.innerHTML = '<span class="g-suave">—</span>'; bt.disabled = true; return; }
+      const dif = Math.round((real - Number(inp.dataset.sistema)) * 100) / 100;
+      td.innerHTML = Math.abs(dif) < 0.01 ? '<b class="positivo">bate</b>' : '<b class="g-alerta">' + (dif > 0 ? '+' : '−') + numBR(dif) + '</b>';
+      bt.disabled = false;
+      bt.textContent = Math.abs(dif) < 0.01 ? 'Registrar' : 'Ajustar e registrar';
+      bt.dataset.real = real; bt.dataset.dif = dif;
+    };
+  });
+  tela.querySelectorAll('[data-fechar]').forEach(bt => {
+    bt.onclick = function () {
+      const dif = Number(bt.dataset.dif);
+      if (Math.abs(dif) >= 0.01 && bt.dataset.armado !== '1') {
+        bt.dataset.armado = '1'; bt.textContent = 'Lançar ajuste de ' + (dif > 0 ? '+' : '−') + numBR(dif) + '?';
+        return;
+      }
+      bt.disabled = true;
+      run('appFechar', bt.dataset.fechar, hojeISO(), Number(bt.dataset.real), Math.abs(dif) >= 0.01).then(function (r) {
+        aviso(r.ajuste_criado ? 'Fechamento registrado com ajuste de ' + brl(r.diferenca) + '.' : 'Fechamento registrado: saldo bate.');
+        invalidar();
+      }).catch(function (e) { bt.disabled = false; erro(e); });
+    };
+  });
+}
+</script>
