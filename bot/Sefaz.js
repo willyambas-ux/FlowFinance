@@ -115,6 +115,29 @@ const Sefaz = (function () {
     return s.slice(0, LIMITE_TEXTO);
   }
 
+  function ehXml_(conteudo, tipo) {
+    return /xml/i.test(tipo || '') || /^\s*<\?xml/i.test(conteudo) || /<(nfeProc|NFe|infNFe)\b/.test(conteudo);
+  }
+
+  /**
+   * XML da nota (alguns estados, como PE, devolvem a NFC-e em XML) → texto com
+   * os nomes oficiais dos campos: xProd, qCom, uCom, vUnCom, vProd, vDesc, vNF...
+   */
+  function xmlParaTexto(xml) {
+    let s = String(xml || '');
+    s = s.replace(/<Signature[\s\S]*?<\/Signature>/gi, ' ');
+    s = s.replace(/<\?[\s\S]*?\?>/g, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
+    s = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+    s = s.replace(/<det\b[^>]*nItem="(\d+)"[^>]*>/gi, '\n--- item $1 ---\n');
+    s = s.replace(/<(emit|dest|total|pag|detPag|ide|infAdic)\b[^>]*>/gi, '\n[$1]\n');
+    // Folhas: <campo>valor</campo> vira "campo: valor"
+    s = s.replace(/<([\w:.-]+)(?:\s[^>]*)?>([^<]*)<\/\1>/g, (m, tag, val) => '\n' + tag.replace(/^.*:/, '') + ': ' + val);
+    s = s.replace(/<[^>]+>/g, '\n');
+    s = decodificarEntidades_(s);
+    s = s.split('\n').map(l => l.replace(/[ \t\r\f\v]+/g, ' ').trim()).filter(l => l && !/^[\w-]+:\s*$/.test(l)).join('\n');
+    return s.slice(0, LIMITE_TEXTO);
+  }
+
   function charset_(resp) {
     const h = resp.getHeaders() || {};
     const tipo = String(h['Content-Type'] || h['content-type'] || '');
@@ -208,10 +231,12 @@ const Sefaz = (function () {
     if (!cs && /�/.test(html)) {
       try { html = resp.getContentText('ISO-8859-1'); } catch (e) { /* fica como está */ }
     }
-    const texto = htmlParaTexto(html);
-    console.log('SEFAZ ' + status + ' · ' + html.length + ' bytes de HTML · ' + texto.length + ' de texto');
+    const xml = ehXml_(html, String((resp.getHeaders() || {})['Content-Type'] || ''));
+    const texto = xml ? xmlParaTexto(html) : htmlParaTexto(html);
+    console.log('SEFAZ ' + status + ' · ' + (xml ? 'XML' : 'HTML') + ' ' + html.length + ' bytes · ' + texto.length + ' de texto · início: ' + texto.slice(0, 120).replace(/\n/g, ' / '));
     if (status !== 200) throw new Error('a SEFAZ respondeu ' + status);
-    if (texto.length < 150) throw new Error('a página da SEFAZ veio vazia (pode depender de JavaScript)');
+    if (xml && !/xProd:|vNF:/.test(texto)) throw new Error('a SEFAZ não devolveu a nota (resposta: ' + texto.slice(0, 60).replace(/\n/g, ' ') + ')');
+    if (!xml && texto.length < 150) throw new Error('a página da SEFAZ veio vazia (pode depender de JavaScript)');
     if (/captcha/i.test(texto) && !/qtde|quantidade|vl\.? ?unit/i.test(texto)) throw new Error('a SEFAZ pediu captcha');
     return texto;
   }
@@ -226,8 +251,11 @@ const Sefaz = (function () {
       const r = baixar_(base + '?p=1');
       r.log.forEach(l => saida.push('  ' + l));
       if (r.resp) {
-        const texto = htmlParaTexto(r.resp.getContentText());
-        saida.push('  página: ' + texto.length + ' caracteres · ' + texto.slice(0, 160).replace(/\n/g, ' / '));
+        const bruto = r.resp.getContentText();
+        const xml = ehXml_(bruto, String((r.resp.getHeaders() || {})['Content-Type'] || ''));
+        const texto = xml ? xmlParaTexto(bruto) : htmlParaTexto(bruto);
+        saida.push('  ' + (xml ? 'XML' : 'HTML') + ': ' + texto.length + ' caracteres · ' + texto.slice(0, 200).replace(/\n/g, ' / '));
+        saida.push('  bruto: ' + bruto.slice(0, 300).replace(/\s+/g, ' '));
       }
     });
     return saida.join('\n');
@@ -242,6 +270,7 @@ const Sefaz = (function () {
     chaveDaUrl: chaveDaUrl,
     chaveDoTexto: chaveDoTexto,
     htmlParaTexto: htmlParaTexto,
+    xmlParaTexto: xmlParaTexto,
     buscarTexto: buscarTexto,
     diagnosticar: diagnosticar
   };

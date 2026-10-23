@@ -59,7 +59,8 @@ const Cupom = (function () {
     return [
       'Você lê fotos de cupons fiscais, notas (NFC-e/DANFE), comprovantes de maquininha e de Pix de um casal brasileiro que controla as finanças.',
       fonte === 'sefaz'
-        ? 'Desta vez você recebe o TEXTO da página oficial da NFC-e no portal da SEFAZ (fonte exata): copie valores, quantidades e itens como estão. Se a página for erro, captcha ou não tiver a nota, e_comprovante = false.'
+        ? 'Desta vez você recebe o TEXTO da página oficial da NFC-e no portal da SEFAZ (fonte exata): copie valores, quantidades e itens como estão. Se a página for erro, captcha ou não tiver a nota, e_comprovante = false. ' +
+          'Se vier em campos do XML da nota: xFant/xNome = loja/razão social; dhEmi = data; xProd = item; qCom = quantidade; uCom = unidade; vUnCom = preço unitário; vProd = total do item; vDesc = desconto do item (valor do item = vProd - vDesc); vNF = valor pago; tPag: 01 dinheiro, 03 crédito, 04 débito, 10/11 vale, 17 pix.'
         : '',
       'Responda sempre chamando a ferramenta ler_cupom.',
       '',
