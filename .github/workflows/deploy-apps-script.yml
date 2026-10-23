@@ -1,0 +1,88 @@
+# Publica no Apps Script tudo que chega na branch main.
+#
+# - Arquivos da raiz (FlowFinance) -> clasp push. O bot usa a biblioteca em modo
+#   desenvolvimento, então já enxerga a mudança na hora.
+# - Pasta bot/ -> clasp push + nova versão na MESMA implantação (a URL não muda).
+#
+# Segredos (Settings > Secrets and variables > Actions):
+#   CLASPRC_JSON       conteúdo do arquivo ~/.clasprc.json do Codespace (login do clasp)
+#   BOT_DEPLOYMENT_ID  ID da implantação do bot (o trecho AKfyc... da URL /exec)
+#   APP_DEPLOYMENT_ID  opcional: ID da implantação do web app, para atualizá-lo também
+
+name: Publicar no Apps Script
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: apps-script
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: O que mudou
+        id: mudou
+        run: |
+          antes="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$antes" ] || ! git cat-file -e "$antes" 2>/dev/null; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            echo "bot=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          arquivos=$(git diff --name-only "$antes" "${{ github.sha }}")
+          echo "$arquivos"
+          if echo "$arquivos" | grep -qE '^[^/]+\.(js|html)$|^appsscript\.json$'; then echo "app=true" >> "$GITHUB_OUTPUT"; else echo "app=false" >> "$GITHUB_OUTPUT"; fi
+          if echo "$arquivos" | grep -qE '^bot/.+\.(js|json)$'; then echo "bot=true" >> "$GITHUB_OUTPUT"; else echo "bot=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.mudou.outputs.app == 'true' || steps.mudou.outputs.bot == 'true'
+        with:
+          node-version: 20
+
+      - name: Instalar clasp e credencial
+        if: steps.mudou.outputs.app == 'true' || steps.mudou.outputs.bot == 'true'
+        env:
+          CLASPRC: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC" ]; then echo "::error::Falta o segredo CLASPRC_JSON"; exit 1; fi
+          npm install -g @google/clasp@3.4.1
+          printf '%s' "$CLASPRC" > ~/.clasprc.json
+          chmod 600 ~/.clasprc.json
+
+      - name: FlowFinance (código)
+        if: steps.mudou.outputs.app == 'true'
+        run: clasp push --force
+
+      - name: FlowFinance (web app, opcional)
+        if: steps.mudou.outputs.app == 'true'
+        env:
+          ID: ${{ secrets.APP_DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$ID" ]; then echo "APP_DEPLOYMENT_ID não definido: o web app fica na versão atual."; exit 0; fi
+          clasp redeploy "$ID" -d "GitHub ${GITHUB_SHA::7}"
+
+      - name: Bot (código)
+        if: steps.mudou.outputs.bot == 'true'
+        working-directory: bot
+        run: clasp push --force
+
+      - name: Bot (nova versão na mesma URL)
+        if: steps.mudou.outputs.bot == 'true'
+        working-directory: bot
+        env:
+          ID: ${{ secrets.BOT_DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$ID" ]; then echo "::error::Falta o segredo BOT_DEPLOYMENT_ID"; exit 1; fi
+          clasp redeploy "$ID" -d "GitHub ${GITHUB_SHA::7}"
+
+      - name: Apagar credencial
+        if: always()
+        run: rm -f ~/.clasprc.json

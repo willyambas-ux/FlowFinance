@@ -49,3 +49,11 @@ Depois, no editor do Apps Script do **FlowFinance Bot** (script.google.com):
 8. Rode `verificarConfig` e `testarIA` para conferir.
 
 Depois de mudar o código: `clasp push` dentro de `bot/` e, no editor, **Implantar › Gerenciar implantações › editar › Nova versão**.
+
+## Publicação automática
+
+O workflow `.github/workflows/deploy-apps-script.yml` publica sozinho a cada push na `main`:
+arquivos da raiz vão para o FlowFinance; a pasta `bot/` vai para o FlowFinance Bot, com nova versão na mesma implantação (a URL do webhook não muda).
+Precisa dos segredos `CLASPRC_JSON` e `BOT_DEPLOYMENT_ID` no GitHub (veja o topo do workflow).
+O Apps Script guarda no máximo 200 versões por projeto; se chegar perto disso, apague versões antigas em Implantar › Gerenciar implantações.
+
