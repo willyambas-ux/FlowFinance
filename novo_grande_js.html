@@ -1,0 +1,558 @@
+<script>
+'use strict';
+/* ============================================================================
+ * FlowFinance — versão de tela grande (computador e tablet, a partir de 1024 px).
+ * Visão do mês (reunião), Revisar em lote e Lançamentos em tabela. Usa as
+ * funções e o estado de novo_js; outras áreas abrem no app clássico por enquanto.
+ * ========================================================================== */
+
+const TELA_GRANDE = window.matchMedia('(min-width: 1024px)');
+
+const LATERAL = [
+  { aba: 'mes', nome: 'Visão do mês', icone: '<path d="M4 11l8-7 8 7v9H4z"/>' },
+  { aba: 'revisar', nome: 'Revisar', icone: '<path d="M5 12l5 5 9-10"/>', contador: true },
+  { aba: 'movimentos', nome: 'Lançamentos', icone: '<path d="M5 6h14M5 12h14M5 18h9"/>' },
+  { tela: 'cartoes', nome: 'Cartões e faturas', icone: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>' },
+  { tela: 'relatorios', nome: 'Relatórios', icone: '<path d="M5 19l5-6 4 3 5-8"/>' },
+  { tela: 'metas', nome: 'Planejamento', icone: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>' },
+  { tela: 'patrimonio', nome: 'Patrimônio', icone: '<path d="M4 10l8-6 8 6M6 10v8M10 10v8M14 10v8M18 10v8M4 20h16"/>' },
+  { tela: 'configuracoes', nome: 'Configurações', icone: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>' }
+];
+
+/** Aba equivalente quando a tela muda de tamanho (girar o tablet, redimensionar). */
+const PARA_GRANDE = { inicio: 'mes', lancamentos: 'movimentos', painel: 'mes', mais: 'mes' };
+const PARA_CELULAR = { mes: 'inicio', revisar: 'inicio', movimentos: 'lancamentos' };
+
+function iniciarModo() {
+  aplicarModo(TELA_GRANDE.matches, true);
+  const ouvir = function (e) { aplicarModo(e.matches, false); };
+  if (TELA_GRANDE.addEventListener) TELA_GRANDE.addEventListener('change', ouvir);
+  else TELA_GRANDE.addListener(ouvir);
+}
+
+function aplicarModo(grande, primeiro) {
+  if (!primeiro && grande === S.grande) return;
+  S.grande = grande;
+  document.body.classList.toggle('grande', grande);
+  document.getElementById('lateral').hidden = !grande;
+  fecharFolha();
+  let aba = S.aba;
+  if (primeiro) aba = grande ? 'mes' : 'inicio';
+  else aba = grande ? (PARA_GRANDE[aba] || aba) : (PARA_CELULAR[aba] || aba);
+  mostrarAba(aba);
+}
+
+function desenharLateral() {
+  const el = document.getElementById('lateral');
+  const n = S.inicio ? S.inicio.revisar.length : 0;
+  el.innerHTML = '<div class="lat-marca"><span class="marca-logo" aria-hidden="true">FF</span>FlowFinance</div><nav class="lat-nav">' +
+    LATERAL.map(it => {
+      const svg = '<svg viewBox="0 0 24 24" aria-hidden="true">' + it.icone + '</svg>';
+      if (it.aba) {
+        return '<button type="button" class="lat-item" data-aba="' + it.aba + '"' + (S.aba === it.aba ? ' aria-current="page"' : '') + '>' +
+          svg + '<span>' + esc(it.nome) + '</span>' + (it.contador && n ? '<span class="contador">' + n + '</span>' : '') + '</button>';
+      }
+      return '<a class="lat-item" href="' + esc(urlClassico(it.tela)) + '" target="_top">' + svg + '<span>' + esc(it.nome) + '</span>' +
+        '<span class="lat-classico">clássico</span></a>';
+    }).join('') + '</nav>' +
+    '<div class="lat-pe"><button type="button" class="lat-item" data-acao="trocar-nome-lat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>' +
+    esc(S.boot.quem || 'Definir seu nome') + '</span></button>' +
+    '<button type="button" class="lat-item" data-acao="travar-lat"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Travar</span></button></div>';
+  el.querySelectorAll('button[data-aba]').forEach(b => { b.onclick = function () { fecharFolha(); S.sel = new Set(); mostrarAba(b.dataset.aba); }; });
+  el.querySelector('[data-acao="trocar-nome-lat"]').onclick = trocarNome;
+  el.querySelector('[data-acao="travar-lat"]').onclick = function () { Trava.travar(); };
+}
+
+/* ============================================================================
+ * Visão do mês (reunião)
+ * ========================================================================== */
+
+function cabecalhoGrande(titulo, m, alvo, extra) {
+  return '<header class="g-topo"><h1>' + esc(titulo) + '</h1>' +
+    (m ? '<div class="g-mes"><button type="button" class="icone-btn" data-gmes="' + alvo + '" data-delta="-1" aria-label="Mês anterior">' + ICONE.esq + '</button>' +
+      '<span>' + esc(maiuscula(nomeMes(m.ano, m.mes))) + '</span>' +
+      '<button type="button" class="icone-btn" data-gmes="' + alvo + '" data-delta="1" aria-label="Próximo mês">' + ICONE.dir + '</button></div>' : '') +
+    (extra || '') + '<span class="g-espaco"></span>' + botaoAtualizar() +
+    '<form class="g-rapido" data-form="rapido-g"><label for="g-frase" class="sr">Lançar</label>' +
+    '<input id="g-frase" placeholder="Lançar: almoço 32,50 débito itaú" autocomplete="off"><button type="submit" class="btn btn-primario btn-pequeno">Lançar</button></form></header>';
+}
+
+function telaMesG() {
+  const m = S.mesMes || mesAtual();
+  const d = S.mesDados;
+  let faltam = '';
+  if (d) {
+    const hoje = hojeISO();
+    const mesAtualStr = d.ano + '-' + String(d.mes).padStart(2, '0');
+    if (hoje.slice(0, 7) === mesAtualStr) {
+      const dia = partesData(hoje).d;
+      faltam = '<span class="topo-mini">dia ' + dia + ' de ' + d.dias_mes + ' · ' + (d.dias_mes - dia === 0 ? 'último dia' : 'faltam ' + (d.dias_mes - dia) + ' dias') + '</span>';
+    } else if (hoje.slice(0, 7) > mesAtualStr) faltam = '<span class="topo-mini">mês fechado</span>';
+    else faltam = '<span class="topo-mini">mês futuro: só previsto</span>';
+  }
+  let h = cabecalhoGrande('Visão do mês', m, 'mes', faltam);
+  if (S.erro_mes && !d) return h + falhaTela(S.erro_mes);
+  if (!d) return h + '<div class="g-grade-4">' + esqueleto([96, 96, 96, 96]) + '</div>' + esqueleto([180, 260, 260]);
+
+  h += faixaSaude(d.saude);
+
+  // As três perguntas
+  const f = d.fechamento;
+  const positivo = f.resultado >= 0;
+  h += '<div class="g-grade-3">';
+  h += '<section class="g-cartao g-escuro"><span class="g-pergunta">Vamos fechar no positivo?</span>' +
+    '<div class="g-resposta"><b>' + (positivo ? 'Sim' : 'Não') + '</b><span class="' + (positivo ? 'cor-entrou' : 'cor-saiu') + '">' + (positivo ? '+' : '−') + 'R$ ' + numBR(f.resultado, 0) + ' previsto</span></div>' +
+    '<div class="saldo-grade"><div><span>Entrou</span><span class="cor-entrou">' + numBR(f.entrou, 0) + '</span></div>' +
+    '<div><span>Saiu</span><span class="cor-saiu">' + numBR(f.saiu, 0) + '</span></div>' +
+    '<div><span>Ainda vai sair</span><span>' + numBR(f.vai_sair, 0) + '</span></div></div>' +
+    (f.vai_entrar ? '<span class="g-rodape">Ainda vai entrar ' + brl(f.vai_entrar) + '.</span>' : '') +
+    (d.menor ? '<span class="g-rodape">Menor saldo nas contas: ' + brl(d.menor.saldo) + ' em ' + esc(rotuloDia(d.menor.data).toLowerCase()) + '.</span>' : '') + '</section>';
+
+  h += '<section class="g-cartao"><span class="g-pergunta">Onde estamos gastando demais?</span>';
+  if (!d.saude.meses_base) h += '<p class="g-vazio">Ainda não há meses anteriores para comparar.</p>';
+  else if (!d.acima.length) h += '<p class="g-vazio">Nenhuma categoria bem acima da média. Bom sinal.</p>';
+  else h += d.acima.map(c => '<button type="button" class="g-linha-btn" data-gcat="' + esc(c.id) + '"><span class="g-forte">' + esc(c.nome) + '</span>' +
+    '<span class="g-suave">' + brl(c.atual) + '</span><span class="g-alerta">' + (c.variacao === null ? 'novo' : '+' + c.variacao + '%') + '</span></button>').join('');
+  h += '<span class="g-rodape">comparado com a média dos ' + (d.saude.meses_base || 3) + ' meses anteriores</span></section>';
+
+  h += '<section class="g-cartao"><span class="g-pergunta">Quanto juntamos para as metas?</span>';
+  if (!d.metas.length) {
+    h += '<p class="g-vazio">Nenhuma meta com valor ainda. Crie em Planejamento (valor, data e a conta onde o dinheiro fica guardado).</p>' +
+      '<a class="link-btn" href="' + esc(urlClassico('metas')) + '" target="_top">Criar meta</a>';
+  } else {
+    h += d.metas.map(mt => {
+      const pct = mt.meta > 0 ? Math.min(100, Math.round(mt.atual / mt.meta * 100)) : 0;
+      return '<div class="g-meta"><div class="g-entre"><b>' + esc(mt.nome) + '</b><span class="g-suave">' + brl(mt.atual) + ' de ' + brl(mt.meta) + '</span></div>' +
+        '<div class="barra-trilho"><div class="barra-cheia" style="width:' + pct + '%"></div></div>' +
+        '<span class="g-rodape">' + (mt.restante <= 0 ? 'Meta atingida.' : (mt.meses > 0 ? 'Guardar ' + brl(mt.por_mes) + ' por mês até ' + esc(dataCurtaMes(mt.data_alvo)) : 'Faltam ' + brl(mt.restante) + (mt.data_alvo ? ' (prazo passou)' : ''))) + '</span></div>';
+    }).join('');
+  }
+  h += '</section></div>';
+
+  // Projeção + orçamentos
+  h += '<div class="g-grade-2-1"><section class="g-cartao"><div class="g-entre"><h2>Saldo projetado nas contas</h2><span class="g-suave">este mês e o próximo, com o que está previsto</span></div>' +
+    graficoProjecao(Object.assign({ largura: 760, altura: 220 }, d, { saldo_fim: d.projecao.length ? d.projecao[d.projecao.length - 1].saldo : d.saldo_fim })) + '</section>';
+  h += '<section class="g-cartao"><div class="g-entre"><h2>Orçamentos</h2><a class="link-btn" href="' + esc(urlClassico('metas')) + '" target="_top">Ajustar</a></div>';
+  if (!d.orcamentos.length) h += '<p class="g-vazio">Nenhum orçamento para este mês.</p>';
+  else h += d.orcamentos.map(o => {
+    const pct = Math.min(100, Math.max(0, o.percentual));
+    return '<div class="orc"><div class="orc-linha"><span style="font-weight:700">' + esc(o.nome) + '</span><span><b>' + numBR(o.consumido, 0) + '</b> de ' + numBR(o.orcado, 0) + '</span></div>' +
+      '<div class="barra-trilho" role="img" aria-label="' + o.percentual + '% usado"><div class="barra-cheia' + (o.percentual >= 90 ? ' alerta' : '') + '" style="width:' + pct + '%"></div></div></div>';
+  }).join('');
+  h += '</section></div>';
+
+  // Categorias + quem
+  h += '<div class="g-grade-2-1"><section class="g-cartao"><div class="g-entre"><h2>Categorias no mês</h2><span class="g-suave">vs. mês anterior e média de 3 meses</span></div>';
+  if (!d.categorias.length) h += '<p class="g-vazio">Sem despesas neste mês.</p>';
+  else {
+    h += '<table class="g-tabela"><thead><tr><th>Categoria</th><th class="num">Este mês</th><th class="num">Anterior</th><th class="num">Média</th><th class="num">Diferença</th></tr></thead><tbody>' +
+      d.categorias.map(c => '<tr data-gcat="' + esc(c.id) + '" tabindex="0"><td><b>' + esc(c.nome) + '</b>' + (c.natureza === 'fixa' ? ' <span class="g-tag">fixa</span>' : '') + '</td>' +
+        '<td class="num"><b>' + numBR(c.atual, 0) + '</b></td><td class="num g-suave">' + numBR(c.anterior, 0) + '</td><td class="num g-suave">' + numBR(c.media, 0) + '</td>' +
+        '<td class="num ' + (c.variacao === null ? 'g-suave' : (c.variacao > 10 ? 'g-alerta' : (c.variacao < -10 ? 'positivo' : 'g-suave'))) + '"><b>' +
+        (c.variacao === null ? '—' : (c.variacao > 0 ? '+' : (c.variacao < 0 ? '−' : '')) + Math.abs(c.variacao) + '%') + '</b></td></tr>').join('') + '</tbody></table>';
+  }
+  h += '</section><section class="g-cartao"><h2>Quem gastou</h2>';
+  if (!d.quem.length) h += '<p class="g-vazio">Sem despesas neste mês.</p>';
+  else {
+    const total = d.quem.reduce((t, q) => t + q.total, 0) || 1;
+    h += '<div class="quem-barra" role="img" aria-label="Divisão dos gastos por pessoa">' + d.quem.map((q, i) =>
+      '<div style="width:' + (q.total / total * 100).toFixed(1) + '%;background:' + (q.sem_nome ? 'var(--linha)' : CORES_PESSOAS[i % CORES_PESSOAS.length]) + '"></div>').join('') + '</div>' +
+      '<div class="quem-lista">' + d.quem.map((q, i) => '<div><span style="display:flex;align-items:center"><span class="bolinha" style="background:' +
+        (q.sem_nome ? 'var(--linha)' : CORES_PESSOAS[i % CORES_PESSOAS.length]) + '"></span>' + esc(q.sem_nome ? 'Sem nome (fixas, antigos)' : q.nome) + '</span><b>' + brl(q.total) + '</b></div>').join('') + '</div>';
+  }
+  h += '</section></div>';
+
+  // Pauta + decisões
+  h += '<div class="g-grade-2"><section class="g-cartao"><h2>Pauta da reunião</h2>';
+  if (!d.pauta.length) h += '<p class="g-vazio">Nada pendente. Aproveitem para olhar as metas.</p>';
+  else h += d.pauta.map((p, i) => '<div class="g-pauta"><input type="checkbox" id="pauta-' + i + '"><label for="pauta-' + i + '">' + esc(p.texto) + '</label>' +
+    '<button type="button" class="link-btn" data-alvo="' + esc(p.alvo) + '">' + esc(p.acao) + '</button></div>').join('');
+  h += '</section><section class="g-cartao"><h2>Decisões</h2><div class="g-decisoes">' +
+    (d.decisoes.length ? d.decisoes.map(x => '<div class="g-decisao"><span class="g-suave">' + esc(dataCurta(x.data)) + '</span><span>' + esc(x.texto) +
+      (x.quem && S.boot.nomes.length > 1 ? ' <span class="g-suave">· ' + esc(x.quem) + '</span>' : '') + '</span>' +
+      '<button type="button" class="g-x" data-decisao="' + esc(x.id) + '" aria-label="Apagar decisão">' + ICONE.fechar + '</button></div>').join('') :
+      '<p class="g-vazio">Anote aqui o que combinarem (ex.: "delivery no máximo R$ 600 por mês").</p>') +
+    '</div><form class="g-nova-decisao" data-form="decisao"><label for="nova-decisao" class="sr">Nova decisão</label>' +
+    '<input id="nova-decisao" maxlength="300" placeholder="Anotar uma decisão de hoje…" autocomplete="off"><button type="submit" class="btn btn-secundario btn-pequeno">Anotar</button></form></section></div>';
+  return h;
+}
+
+function dataCurta(iso) { const p = partesData(iso); return p ? String(p.d).padStart(2, '0') + '/' + String(p.m).padStart(2, '0') : ''; }
+function dataCurtaMes(iso) { const p = partesData(iso); return p ? MESES_CURTOS[p.m - 1] + '/' + p.a : ''; }
+
+/** Faixa de saúde financeira: poupança, custo fixo, reserva, parcelas. */
+function faixaSaude(sd) {
+  const blocos = [];
+  // Taxa de poupança
+  if (sd.poupanca_mes === null) blocos.push(tile('Taxa de poupança', '—', 'sem receitas no mês', ''));
+  else blocos.push(tile('Taxa de poupança', sd.poupanca_mes + '%', 'meta ' + sd.meta_poupanca + '%' + (sd.poupanca_media !== null ? ' · média ' + sd.poupanca_media + '%' : ''),
+    sd.poupanca_mes >= sd.meta_poupanca ? 'bom' : (sd.poupanca_mes >= 0 ? 'atencao' : 'ruim')));
+  // Custo fixo
+  if (!sd.tem_fixas) blocos.push(tile('Custo fixo / renda', '—', 'marque as categorias fixas', 'config'));
+  else if (sd.fixo_renda === null) blocos.push(tile('Custo fixo / renda', '—', 'sem meses anteriores', ''));
+  else blocos.push(tile('Custo fixo / renda', sd.fixo_renda + '%', brl(sd.fixo_mensal) + ' por mês · ideal até 50%', sd.fixo_renda <= 50 ? 'bom' : (sd.fixo_renda <= 60 ? 'atencao' : 'ruim')));
+  // Reserva
+  if (!sd.tem_reserva) blocos.push(tile('Reserva de emergência', '—', 'escolha a conta de reserva', 'config'));
+  else if (sd.reserva_meses === null) blocos.push(tile('Reserva de emergência', brl(sd.reserva), 'sem meses anteriores para medir', ''));
+  else blocos.push(tile('Reserva de emergência', numBR(sd.reserva_meses, 1).replace(',0', '') + ' meses', brl(sd.reserva) + ' · ' + sd.reserva_base + ' · ideal 6+',
+    sd.reserva_meses >= 6 ? 'bom' : (sd.reserva_meses >= 3 ? 'atencao' : 'ruim')));
+  // Parcelas
+  blocos.push(tile('Parcelas a vencer', sd.parcelas_futuras ? brl(sd.parcelas_futuras) : 'nenhuma',
+    sd.parcelas_futuras ? 'depois deste mês · ' + sd.parcelas_meses + (sd.parcelas_meses === 1 ? ' mês' : ' meses') : 'nada comprometido nos próximos meses', ''));
+  return '<section class="g-saude" aria-label="Saúde financeira">' + blocos.join('') +
+    '<button type="button" class="link-btn g-config" data-acao="config-ind">Configurar</button></section>';
+
+  function tile(nome, valor, sub, estado) {
+    const cls = estado === 'bom' ? ' bom' : estado === 'atencao' ? ' atencao' : estado === 'ruim' ? ' ruim' : '';
+    const sinalTxt = estado === 'bom' ? 'dentro do ideal' : estado === 'atencao' ? 'atenção' : estado === 'ruim' ? 'fora do ideal' : '';
+    return '<div class="g-tile' + cls + '"><span class="g-tile-nome">' + esc(nome) + (sinalTxt ? '<span class="sr"> (' + sinalTxt + ')</span>' : '') + '</span>' +
+      '<span class="g-tile-valor">' + (cls ? '<span class="g-ponto" aria-hidden="true"></span>' : '') + esc(valor) + '</span>' +
+      (estado === 'config' ? '<button type="button" class="link-btn g-tile-sub" data-acao="config-ind">' + esc(sub) + '</button>' : '<span class="g-tile-sub">' + esc(sub) + '</span>') + '</div>';
+  }
+}
+
+function abrirConfigIndicadores() {
+  abrirFolha(topoFolha('Indicadores') + '<div id="cfg-area">' + '<div class="esq" style="height:200px"></div></div>', function (folha) {
+    run('appIndicadoresConfig').then(function (c) {
+      const area = folha.querySelector('#cfg-area');
+      area.innerHTML =
+        '<p class="obs" style="margin:0 0 12px">Categorias <b>fixas</b> são as que vêm todo mês quase no mesmo valor (moradia, escola, contas da casa, plano de saúde). Elas formam o custo fixo.</p>' +
+        '<div class="campos g-checks">' + c.categorias.map(x => '<label class="g-check"><input type="checkbox" name="fixa" value="' + esc(x.id) + '"' + (x.fixa ? ' checked' : '') + '><span>' + esc(x.nome) + '</span></label>').join('') + '</div>' +
+        '<p class="obs" style="margin:18px 0 12px">Conta(s) onde fica a <b>reserva de emergência</b>:</p>' +
+        '<div class="campos g-checks">' + c.contas.map(x => '<label class="g-check"><input type="checkbox" name="reserva" value="' + esc(x.id) + '"' + (x.reserva ? ' checked' : '') + '><span>' + esc(x.nome) + '</span></label>').join('') + '</div>' +
+        '<div class="campos" style="margin-top:18px"><div class="campo"><label for="cfg-meta">Meta de poupança</label><input id="cfg-meta" inputmode="numeric" value="' + c.meta_poupanca + '%"></div></div>' +
+        '<p class="obs">Quanto da renda vocês querem guardar por mês. Entre 10% e 20% é uma boa referência.</p>' +
+        '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="salvar-cfg">Salvar</button></div>';
+      const b = area.querySelector('[data-acao="salvar-cfg"]');
+      b.onclick = function () {
+        b.disabled = true;
+        const marcados = n => Array.prototype.map.call(area.querySelectorAll('input[name="' + n + '"]:checked'), i => i.value);
+        run('appSalvarIndicadores', { fixas: marcados('fixa'), reservas: marcados('reserva'), meta_poupanca: textoParaNumero(area.querySelector('#cfg-meta').value) })
+          .then(function () { fecharFolha(); aviso('Indicadores atualizados.'); invalidar(); })
+          .catch(function (e) { b.disabled = false; erro(e); });
+      };
+    }).catch(function (e) { folha.querySelector('#cfg-area').innerHTML = '<p class="ia-msg">' + esc(e.message || e) + '</p>'; });
+  });
+}
+
+/* ============================================================================
+ * Revisar (fila em tabela, lote e detalhe ao lado)
+ * ========================================================================== */
+
+function telaRevisarG() {
+  let h = cabecalhoGrande('Revisar', null, '', '<span class="topo-mini">compras avisadas pelo banco e o que foi salvo para conferir</span>');
+  if (S.erro_revisar && !S.inicio) return h + falhaTela(S.erro_revisar);
+  if (!S.inicio) return h + esqueleto([50, 300]);
+  const itens = S.inicio.revisar;
+  // A seleção só guarda o que ainda está na fila
+  S.sel = new Set(Array.from(S.sel).filter(id => itens.some(i => i.id === id)));
+  if (!itens.length) return h + '<div class="vazio g-vazio-grande">Nada para revisar. As compras que o banco avisar no celular aparecem aqui.</div>';
+  if (!S.revDetalhe || !itens.some(i => i.id === S.revDetalhe)) S.revDetalhe = itens[0].id;
+
+  h += '<div class="g-dupla"><div class="g-dupla-principal">' + barraLote('revisar', itens);
+  h += '<div class="g-cartao g-sem-pad"><table class="g-tabela g-selecionavel"><thead><tr>' +
+    '<th class="g-col-check"><input type="checkbox" data-sel-todos aria-label="Selecionar todos"' + (S.sel.size === itens.length ? ' checked' : '') + '></th>' +
+    '<th>Data</th><th>Descrição</th><th>Conta ou cartão</th><th>Categoria</th><th>Quem</th><th class="num">Valor</th></tr></thead><tbody>' +
+    itens.map(it => {
+      const pag = nomePagamento(it), cat = nomeCategoria(it.categoria);
+      return '<tr data-rev="' + esc(it.id) + '" class="' + (S.sel.has(it.id) ? 'sel ' : '') + (S.revDetalhe === it.id ? 'ativo' : '') + '" tabindex="0">' +
+        '<td class="g-col-check"><input type="checkbox" data-sel="' + esc(it.id) + '" aria-label="Selecionar ' + esc(it.descricao) + '"' + (S.sel.has(it.id) ? ' checked' : '') + '></td>' +
+        '<td class="g-suave">' + esc(dataCurta(it.data)) + '</td>' +
+        '<td><b>' + esc(it.descricao) + '</b><br><span class="g-suave g-pequeno">' + esc(origemTexto(it.origem) || '—') + '</span></td>' +
+        '<td>' + (pag ? esc(pag) : '<span class="chip falta">escolher</span>') + '</td>' +
+        '<td>' + (cat ? esc(cat) : '<span class="chip falta">sem categoria</span>') + '</td>' +
+        '<td class="g-suave">' + esc(it.quem || '—') + '</td>' +
+        '<td class="num"><b class="' + (it.valor > 0 ? 'positivo' : '') + '">' + sinal(it.valor) + '</b></td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<p class="nota" style="margin:10px 0 0">Categoria trocada aqui vira regra para as próximas compras do mesmo lugar.</p></div>' +
+    '<aside class="g-cartao g-detalhe" aria-label="Detalhe"><div id="rev-detalhe"></div></aside></div>';
+  return h;
+}
+
+function montarDetalheRevisar(tela) {
+  const area = tela.querySelector('#rev-detalhe');
+  if (!area || !S.inicio) return;
+  const it = S.inicio.revisar.find(r => r.id === S.revDetalhe);
+  if (!it) return;
+  const rasc = {
+    id: it.id, tipo: it.valor > 0 ? 'receita' : 'despesa', valor: Math.abs(it.valor), descricao: it.descricao,
+    data: it.data, conta: it.conta, cartao: it.cartao, conta_destino: '', categoria: it.categoria,
+    parcelas: 1, quem: it.quem || '', status: it.status, observacao: it.observacao
+  };
+  area.innerHTML = '<p class="g-suave g-pequeno" style="margin:0 0 4px">' + esc((origemTexto(it.origem) ? 'Veio do ' + origemTexto(it.origem) + ' · ' : '') + rotuloDia(it.data)) + '</p>' +
+    '<h2 style="margin:0 0 4px">' + esc(it.descricao) + '</h2><p class="g-valor-grande ' + (it.valor > 0 ? 'positivo' : '') + '">' + brl(it.valor) + '</p><div id="rev-form"></div>';
+  montarForm(area.querySelector('#rev-form'), rasc, { novo: false, sugerida: it.categoria });
+}
+
+/* ============================================================================
+ * Lançamentos em tabela
+ * ========================================================================== */
+
+function telaMovG() {
+  const m = S.listaMes || mesAtual();
+  let h = cabecalhoGrande('Lançamentos', m, 'mov', '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="novo">Novo lançamento</button>');
+  if (S.erro_movimentos && !S.lista) return h + falhaTela(S.erro_movimentos);
+  if (!S.lista) return h + '<div class="g-grade-4">' + esqueleto([70, 70, 70, 70]) + '</div>' + esqueleto([46, 420]);
+  const todos = S.lista;
+  let ent = 0, sai = 0, apagar = 0;
+  todos.forEach(l => {
+    if (l.transferencia) return;
+    if (l.valor > 0) ent += l.valor; else sai += -l.valor;
+    if ((l.status === 'pendente' || l.status === 'agendado') && l.valor < 0) apagar += -l.valor;
+  });
+  h += '<div class="g-grade-4 g-totais">' +
+    '<div class="g-tot"><span>Entradas</span><b class="positivo">+' + numBR(ent) + '</b></div>' +
+    '<div class="g-tot"><span>Saídas</span><b>−' + numBR(sai) + '</b></div>' +
+    '<div class="g-tot"><span>Ainda a pagar</span><b class="g-alerta">−' + numBR(apagar) + '</b></div>' +
+    '<div class="g-tot"><span>Resultado</span><b class="' + (ent - sai >= 0 ? 'positivo' : '') + '">' + (ent - sai >= 0 ? '+' : '−') + numBR(ent - sai) + '</b></div></div>';
+
+  // Filtros
+  const contasUsadas = {}, catsUsadas = {}, quemUsados = {};
+  todos.forEach(l => {
+    if (l.cartao) contasUsadas['k:' + l.cartao] = nomePagamento(l); else if (l.conta) contasUsadas['c:' + l.conta] = nomePagamento(l);
+    const c = acharCategoria(l.categoria); const pai = c && c.pai ? acharCategoria(c.pai) : c;
+    if (pai) catsUsadas[pai.id] = pai.nome;
+    if (l.quem) quemUsados[l.quem] = true;
+  });
+  const opcoes = (obj, sel, vazio) => '<option value="">' + esc(vazio) + '</option>' + Object.keys(obj).sort((a, b) => String(obj[a]).localeCompare(String(obj[b]), 'pt-BR'))
+    .map(k => '<option value="' + esc(k) + '"' + (sel === k ? ' selected' : '') + '>' + esc(obj[k] === true ? k : obj[k]) + '</option>').join('');
+  h += '<div class="g-filtros"><div class="busca g-busca">' + ICONE.busca + '<label for="busca" class="sr">Buscar</label>' +
+    '<input id="busca" type="search" placeholder="Buscar descrição, categoria, conta ou valor" value="' + esc(S.busca) + '"></div>' +
+    FILTROS.map(f => '<button type="button" class="filtro" data-filtro="' + f.id + '" aria-pressed="' + (S.filtro === f.id) + '">' + esc(f.nome) +
+      (f.id !== 'tudo' ? ' · ' + todos.filter(f.f).length : '') + '</button>').join('') +
+    '<label class="sr" for="f-conta-g">Conta ou cartão</label><select id="f-conta-g" class="g-select">' + opcoes(contasUsadas, S.fConta, 'Todas as contas') + '</select>' +
+    '<label class="sr" for="f-cat-g">Categoria</label><select id="f-cat-g" class="g-select">' + opcoes(catsUsadas, S.fCat, 'Todas as categorias') + '</select>' +
+    (Object.keys(quemUsados).length > 1 ? '<label class="sr" for="f-quem-g">Quem</label><select id="f-quem-g" class="g-select">' + opcoes(quemUsados, S.fQuem, 'Todas as pessoas') + '</select>' : '') +
+    '</div>';
+  h += '<div id="mov-corpo">' + corpoMovG() + '</div>';
+  return h;
+}
+
+function filtrarMovG() {
+  const filtro = FILTROS.find(f => f.id === S.filtro) || FILTROS[0];
+  const q = IA_norm(S.busca);
+  return S.lista.filter(filtro.f).filter(l => {
+    if (S.fConta) { const k = l.cartao ? 'k:' + l.cartao : 'c:' + l.conta; if (k !== S.fConta) return false; }
+    if (S.fCat) { const c = acharCategoria(l.categoria); const pai = c && c.pai ? c.pai : (c ? c.id : ''); if (pai !== S.fCat) return false; }
+    if (S.fQuem && l.quem !== S.fQuem) return false;
+    if (!q) return true;
+    return IA_norm([l.descricao, nomeCategoria(l.categoria), nomePagamento(l), numBR(l.valor), l.quem].join(' ')).indexOf(q) !== -1;
+  });
+}
+
+function corpoMovG() {
+  const itens = filtrarMovG();
+  S.sel = new Set(Array.from(S.sel).filter(id => itens.some(i => i.id === id)));
+  if (!itens.length) return '<div class="vazio g-vazio-grande">Nenhum lançamento' + (S.lista.length ? ' com esses filtros' : ' neste mês') + '.</div>';
+  const cores = { pendente: 'apagar', agendado: 'agendado', revisar: 'revisar', confirmado: 'ok', conciliado: 'ok' };
+  let soma = 0;
+  itens.forEach(l => { soma += l.valor; });
+  let ultimoDia = '';
+  const linhas = itens.map(l => {
+    const c = acharCategoria(l.categoria);
+    const catTxt = l.transferencia ? 'Transferência' : (c ? c.caminho : '');
+    // Saldo das contas no fim do dia, só na primeira linha de cada dia
+    let saldo = '';
+    if (l.data !== ultimoDia) { ultimoDia = l.data; if (S.saldosDia && S.saldosDia[l.data] !== undefined) saldo = numBR(S.saldosDia[l.data]); }
+    return '<tr data-mov="' + esc(l.id) + '" class="' + (S.sel.has(l.id) ? 'sel' : '') + '" tabindex="0">' +
+      '<td class="g-col-check"><input type="checkbox" data-sel="' + esc(l.id) + '" aria-label="Selecionar ' + esc(l.descricao) + '"' + (S.sel.has(l.id) ? ' checked' : '') + '></td>' +
+      '<td class="g-suave">' + esc(dataCurta(l.data)) + '</td>' +
+      '<td><b>' + esc(l.descricao) + '</b>' + (l.parcela ? ' <span class="g-suave g-pequeno">' + esc(l.parcela) + '</span>' : '') + '</td>' +
+      '<td>' + (catTxt ? esc(catTxt) : '<span class="g-suave">sem categoria</span>') + '</td>' +
+      '<td>' + esc(nomePagamento(l)) + '</td>' +
+      '<td class="g-suave">' + esc(l.quem || '—') + '</td>' +
+      '<td><span class="g-status ' + (cores[l.status] || '') + '">' + esc(STATUS_NOMES[l.status] || l.status) + '</span></td>' +
+      '<td class="num"><b class="' + (l.valor > 0 ? 'positivo' : '') + '">' + sinal(l.valor) + '</b></td>' +
+      '<td class="num g-suave">' + saldo + '</td></tr>';
+  }).join('');
+  return barraLote('mov', itens) +
+    '<div class="g-cartao g-sem-pad"><table class="g-tabela g-selecionavel"><thead><tr>' +
+    '<th class="g-col-check"><input type="checkbox" data-sel-todos aria-label="Selecionar todos"' + (S.sel.size === itens.length ? ' checked' : '') + '></th>' +
+    '<th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta ou cartão</th><th>Quem</th><th>Situação</th><th class="num">Valor</th><th class="num">Saldo contas</th></tr></thead><tbody>' +
+    linhas + '</tbody><tfoot><tr><td></td><td colspan="6" class="g-suave">' + itens.length + (itens.length === 1 ? ' lançamento' : ' lançamentos') + '</td>' +
+    '<td class="num"><b>' + sinal(soma) + '</b></td><td></td></tr></tfoot></table></div>' +
+    '<p class="nota" style="margin:10px 0 0">Saldo das contas no fim de cada dia, incluindo o previsto. Compras no cartão entram no saldo quando a fatura é paga.</p>';
+}
+
+/** Barra que aparece quando há linhas selecionadas. */
+function barraLote(onde, itens) {
+  if (!S.sel.size) return '<div class="g-lote vazio-lote">Selecione linhas para ' + (onde === 'revisar' ? 'confirmar ou trocar a categoria de várias de uma vez.' : 'mudar categoria ou situação, ou excluir de uma vez.') + '</div>';
+  const sel = itens.filter(i => S.sel.has(i.id));
+  const total = sel.reduce((t, i) => t + i.valor, 0);
+  const cats = '<option value="">' + (onde === 'revisar' ? 'Manter a de cada um' : 'Categoria…') + '</option>' +
+    ['despesa', 'receita'].map(tp => '<optgroup label="' + (tp === 'despesa' ? 'Despesas' : 'Receitas') + '">' +
+      S.boot.categorias.filter(c => c.tipo === tp).map(c => '<option value="' + esc(c.id) + '">' + esc(c.caminho) + '</option>').join('') + '</optgroup>').join('');
+  let h = '<div class="g-lote" role="region" aria-label="Ações para os selecionados"><b>' + sel.length + (sel.length === 1 ? ' selecionado' : ' selecionados') + ' · ' + sinal(total) + '</b><span class="g-espaco"></span>' +
+    '<label for="lote-cat" class="g-lote-rot">Categoria</label><select id="lote-cat">' + cats + '</select>';
+  if (onde === 'revisar') {
+    h += '<button type="button" class="btn btn-primario btn-pequeno" data-lote="confirmar">Confirmar ' + sel.length + '</button>';
+  } else {
+    h += '<label for="lote-status" class="g-lote-rot">Situação</label><select id="lote-status"><option value="">Manter</option>' +
+      ['confirmado', 'pendente', 'agendado', 'conciliado', 'revisar'].map(s => '<option value="' + s + '">' + STATUS_NOMES[s] + '</option>').join('') + '</select>' +
+      '<button type="button" class="btn btn-primario btn-pequeno" data-lote="aplicar">Aplicar</button>';
+  }
+  h += '<button type="button" class="btn btn-lote-perigo btn-pequeno" data-lote="excluir">Excluir</button>' +
+    '<button type="button" class="btn btn-lote-limpar btn-pequeno" data-lote="limpar">Limpar</button></div>';
+  return h;
+}
+
+function acaoLote(onde, acao, tela, botao) {
+  const ids = Array.from(S.sel);
+  if (!ids.length) return;
+  if (acao === 'limpar') { S.sel = new Set(); desenhar(); return; }
+  const cat = (tela.querySelector('#lote-cat') || {}).value || '';
+  let p;
+  if (acao === 'excluir') {
+    if (botao.dataset.armado !== '1') {
+      botao.dataset.armado = '1'; botao.textContent = 'Excluir ' + ids.length + '? Toque de novo';
+      setTimeout(function () { if (botao.isConnected) { botao.dataset.armado = ''; botao.textContent = 'Excluir'; } }, 4000);
+      return;
+    }
+    p = run('appExcluirLote', ids).then(r => (r.count || ids.length) + ' excluído(s)');
+  } else if (onde === 'revisar') {
+    p = run('appRevisarLote', ids, { categoria: cat, confirmar: true }).then(r => {
+      let msg = r.confirmados + (r.confirmados === 1 ? ' confirmado' : ' confirmados');
+      if (r.pulados) msg += '; ' + r.pulados + ' sem conta ficaram na fila';
+      if (r.tipo_diferente) msg += '; categoria não aplicada em ' + r.tipo_diferente + ' de outro tipo';
+      if (r.aprendidos && r.aprendidos.length) msg += '. ' + (r.aprendidos.length === 1 ? r.aprendidos[0] : 'Aprendi ' + r.aprendidos.length + ' regras');
+      return msg;
+    });
+  } else {
+    const st = (tela.querySelector('#lote-status') || {}).value || '';
+    if (!cat && !st) { aviso('Escolha a categoria ou a situação.', { erro: true }); return; }
+    p = run('appEditarLote', ids, { categoria: cat, status: st }).then(r => {
+      let msg = ids.length + ' atualizado(s)';
+      if (r.pulados) msg += '; categoria não aplicada em ' + r.pulados + ' (tipo diferente ou transferência)';
+      return msg;
+    });
+  }
+  tela.querySelectorAll('.g-lote button, .g-lote select').forEach(b => { b.disabled = true; });
+  p.then(function (msg) { S.sel = new Set(); aviso(msg); invalidar(); })
+    .catch(function (e) { erro(e); desenhar(); });
+}
+
+/* ============================================================================
+ * Eventos da tela grande
+ * ========================================================================== */
+
+function ligarTelaGrande(tela) {
+  // Mês anterior/próximo
+  tela.querySelectorAll('[data-gmes]').forEach(b => {
+    b.onclick = function () {
+      const delta = Number(b.dataset.delta);
+      if (b.dataset.gmes === 'mes') { S.mesMes = mudarMes(S.mesMes || mesAtual(), delta); S.mesDados = null; }
+      else { S.listaMes = mudarMes(S.listaMes || mesAtual(), delta); S.lista = null; S.sel = new Set(); }
+      desenhar(); carregarAba(true);
+    };
+  });
+  // Lançar pela frase no topo
+  const fr = tela.querySelector('[data-form="rapido-g"]');
+  if (fr) fr.onsubmit = function (e) { e.preventDefault(); const i = fr.querySelector('input'); const t = i.value.trim(); i.value = ''; abrirLancar(t); };
+
+  // Visão do mês
+  tela.querySelectorAll('[data-acao="config-ind"]').forEach(b => { b.onclick = abrirConfigIndicadores; });
+  tela.querySelectorAll('[data-gcat]').forEach(el => {
+    const ir = function () { irParaMovimentos({ fCat: el.dataset.gcat, mes: S.mesMes }); };
+    el.onclick = ir;
+    if (el.tagName === 'TR') el.onkeydown = function (e) { if (e.key === 'Enter') ir(); };
+  });
+  tela.querySelectorAll('[data-alvo]').forEach(b => {
+    b.onclick = function () {
+      const a = b.dataset.alvo;
+      if (a === 'revisar') mostrarAba('revisar');
+      else if (a === 'apagar') irParaMovimentos({ filtro: 'apagar', mes: mesAtual() });
+      else if (a === 'config') abrirConfigIndicadores();
+      else if (a.indexOf('categoria:') === 0) irParaMovimentos({ fCat: a.slice(10), mes: S.mesMes });
+      else if (a.indexOf('busca:') === 0) irParaMovimentos({ busca: a.slice(6), mes: S.mesMes });
+    };
+  });
+  const fd = tela.querySelector('[data-form="decisao"]');
+  if (fd) fd.onsubmit = function (e) {
+    e.preventDefault();
+    const i = fd.querySelector('input'); const t = i.value.trim();
+    if (!t) return;
+    fd.querySelector('button').disabled = true;
+    run('appSalvarDecisao', t).then(function (lista) { S.mesDados.decisoes = lista; desenhar(); aviso('Decisão anotada.'); })
+      .catch(function (x) { fd.querySelector('button').disabled = false; erro(x); });
+  };
+  tela.querySelectorAll('[data-decisao]').forEach(b => {
+    b.onclick = function () {
+      run('appExcluirDecisao', b.dataset.decisao).then(function (lista) { S.mesDados.decisoes = lista; desenhar(); }).catch(erro);
+    };
+  });
+
+  // Seleção (Revisar e Lançamentos)
+  const onde = S.aba === 'revisar' ? 'revisar' : 'mov';
+  const lista = S.aba === 'revisar' ? (S.inicio ? S.inicio.revisar : []) : (S.lista ? filtrarMovG() : []);
+  tela.querySelectorAll('input[data-sel]').forEach(cb => {
+    cb.onclick = function (e) { e.stopPropagation(); };
+    cb.onchange = function () { if (cb.checked) S.sel.add(cb.dataset.sel); else S.sel.delete(cb.dataset.sel); redesenharTabela(tela); };
+  });
+  const todos = tela.querySelector('input[data-sel-todos]');
+  if (todos) todos.onchange = function () { S.sel = todos.checked ? new Set(lista.map(i => i.id)) : new Set(); redesenharTabela(tela); };
+  tela.querySelectorAll('[data-lote]').forEach(b => { b.onclick = function () { acaoLote(onde, b.dataset.lote, tela, b); }; });
+
+  // Revisar: linha abre o detalhe ao lado
+  tela.querySelectorAll('tr[data-rev]').forEach(tr => {
+    const abrir = function () { S.revDetalhe = tr.dataset.rev; tela.querySelectorAll('tr[data-rev]').forEach(x => x.classList.toggle('ativo', x === tr)); montarDetalheRevisar(tela); };
+    tr.onclick = abrir;
+    tr.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+  if (S.aba === 'revisar') montarDetalheRevisar(tela);
+
+  // Lançamentos: linha abre a edição (painel lateral)
+  tela.querySelectorAll('tr[data-mov]').forEach(tr => {
+    const abrir = function () { const it = S.lista.find(l => l.id === tr.dataset.mov); if (it) abrirEdicao(it); };
+    tr.onclick = abrir;
+    tr.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+  [['#f-conta-g', 'fConta'], ['#f-cat-g', 'fCat'], ['#f-quem-g', 'fQuem']].forEach(par => {
+    const el = tela.querySelector(par[0]);
+    if (el) el.onchange = function () { S[par[1]] = el.value; S.sel = new Set(); redesenharTabela(tela); };
+  });
+  if (S.aba === 'movimentos') {
+    const busca = tela.querySelector('#busca');
+    if (busca) busca.oninput = function () { S.busca = busca.value; S.sel = new Set(); redesenharTabela(tela); };
+  }
+}
+
+/** Redesenha só a tabela (mantém o foco na busca e nos filtros). */
+function redesenharTabela(tela) {
+  if (S.aba === 'movimentos') {
+    const corpo = tela.querySelector('#mov-corpo');
+    if (corpo) corpo.innerHTML = corpoMovG();
+    ligarTelaGrandeTabela(tela);
+  } else {
+    desenhar();
+  }
+}
+
+function ligarTelaGrandeTabela(tela) {
+  // Mesmos eventos de seleção e linhas, só dentro da tabela redesenhada
+  const corpo = tela.querySelector('#mov-corpo');
+  const lista = filtrarMovG();
+  corpo.querySelectorAll('input[data-sel]').forEach(cb => {
+    cb.onclick = function (e) { e.stopPropagation(); };
+    cb.onchange = function () { if (cb.checked) S.sel.add(cb.dataset.sel); else S.sel.delete(cb.dataset.sel); redesenharTabela(tela); };
+  });
+  const todos = corpo.querySelector('input[data-sel-todos]');
+  if (todos) todos.onchange = function () { S.sel = todos.checked ? new Set(lista.map(i => i.id)) : new Set(); redesenharTabela(tela); };
+  corpo.querySelectorAll('[data-lote]').forEach(b => { b.onclick = function () { acaoLote('mov', b.dataset.lote, tela, b); }; });
+  corpo.querySelectorAll('tr[data-mov]').forEach(tr => {
+    const abrir = function () { const it = S.lista.find(l => l.id === tr.dataset.mov); if (it) abrirEdicao(it); };
+    tr.onclick = abrir;
+    tr.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+}
+
+/** Abre Lançamentos já filtrado (de um cartão da Visão do mês ou da pauta). */
+function irParaMovimentos(o) {
+  S.filtro = o.filtro || 'tudo';
+  S.busca = o.busca || '';
+  S.fCat = o.fCat || '';
+  S.fConta = ''; S.fQuem = '';
+  S.sel = new Set();
+  if (o.mes && (!S.listaMes || S.listaMes.ano !== o.mes.ano || S.listaMes.mes !== o.mes.mes)) { S.listaMes = o.mes; S.lista = null; }
+  mostrarAba('movimentos');
+}
+</script>

@@ -4,9 +4,9 @@
  */
 const Init = (function () {
   const SCHEMA = {
-    'Contas':        ['id','nome','tipo','saldo_inicial','data_saldo_inicial','icone','icone_url','moeda','banco','agencia','numero','limite','contato','telefone','ativo','criado_em'],
+    'Contas':        ['id','nome','tipo','saldo_inicial','data_saldo_inicial','icone','icone_url','moeda','banco','agencia','numero','limite','contato','telefone','ativo','criado_em','reserva'],
     'Cartoes':       ['id','nome','conta_pagamento','dia_fechamento','dia_vencimento','limite','bandeira','icone','icone_url','ativo','criado_em'],
-    'Categorias':    ['id','nome','pai','tipo','icone','criado_em'],
+    'Categorias':    ['id','nome','pai','tipo','icone','criado_em','natureza'],
     'Centros':       ['id','nome','tipo','cor','criado_em'],
     'Projetos':      ['id','nome','valor_meta','data_alvo','conta_vinculada','criado_em'],
     'Tags':          ['id','nome','criado_em'],
@@ -16,7 +16,9 @@ const Init = (function () {
     'Orcamentos':    ['id','nome','tipo','referencia','valor','periodo','data_inicio','data_fim','mostrar_restante','criado_em'],
     'Regras':        ['id','condicao_campo','condicao_operador','condicao_valor','acao_campo','acao_valor','prioridade','ativo','criado_em'],
     'Fechamentos':   ['id','data','conta','saldo_real','criado_em'],
-    'Config':        ['chave','valor']
+    'Config':        ['chave','valor'],
+    // Decisões anotadas na reunião do mês (tela grande, Visão do mês)
+    'Decisoes':      ['id','data','texto','quem','criado_em']
   };
 
   function ensureAllSheets() {
