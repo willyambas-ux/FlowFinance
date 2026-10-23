@@ -95,16 +95,31 @@ const Cupom = (function () {
     return null;
   }
 
-  function lerImagem_(arquivo, ctx, quem, legenda) {
-    const blob = Telegram.baixar(arquivo.fileId, LIMITE_BYTES, 'foto');
-    const dados = Utilities.base64Encode(blob.getBytes());
-    const bloco = arquivo.mime === 'application/pdf'
-      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dados } }
-      : { type: 'image', source: { type: 'base64', media_type: arquivo.mime, data: dados } };
-    return Interpretador.chamarIA(sistema_(ctx, quem, legenda, 'foto'), [
-      bloco,
-      { type: 'text', text: 'Leia este comprovante.' + (legenda ? ' Legenda: ' + legenda : '') }
-    ], FERRAMENTA, 4096);
+  const MAX_FOTOS = 6;
+  const LIMITE_TOTAL = 18 * 1024 * 1024; // base64 de todas as fotos numa chamada
+
+  /** Lê uma ou várias fotos (partes do mesmo cupom) numa chamada só. */
+  function lerImagens_(arquivos, ctx, quem, legenda) {
+    const blocos = [];
+    let total = 0;
+    arquivos.slice(0, MAX_FOTOS).forEach(arquivo => {
+      const blob = Telegram.baixar(arquivo.fileId, LIMITE_BYTES, 'foto');
+      const dados = Utilities.base64Encode(blob.getBytes());
+      total += dados.length;
+      if (total > LIMITE_TOTAL) return;
+      blocos.push(arquivo.mime === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dados } }
+        : { type: 'image', source: { type: 'base64', media_type: arquivo.mime, data: dados } });
+    });
+    const varias = blocos.length > 1;
+    const pedido = varias
+      ? 'Estas ' + blocos.length + ' imagens são partes do MESMO cupom, em ordem (de cima para baixo) e podem se sobrepor na emenda. ' +
+        'Junte tudo numa leitura só: todos os itens uma vez cada (item que aparece no fim de uma foto e no começo da seguinte, com mesma descrição e valor, conta uma vez só). ' +
+        'O total, a forma de pagamento e a chave de acesso costumam estar na última parte.'
+      : 'Leia este comprovante.';
+    return Interpretador.chamarIA(sistema_(ctx, quem, legenda, 'foto'),
+      blocos.concat([{ type: 'text', text: pedido + (legenda ? ' Legenda: ' + legenda : '') }]),
+      FERRAMENTA, varias ? 8192 : 4096);
   }
 
   /** Consulta a nota na SEFAZ e lê o texto da página com a IA. */
@@ -258,7 +273,8 @@ const Cupom = (function () {
     const loja = String(b.loja || b.razao_social || '').trim();
     if (loja) r.descricao = loja.slice(0, 80);
     if (b.forma_pagamento) r.formaPagamento = b.forma_pagamento;
-    r.cabecalho = 'Cupom · ' + (loja || 'foto') + (r.formaPagamento ? ' · ' + rotuloPagamento_(r.formaPagamento) : '');
+    const nFotos = (r.fotos || []).length;
+    r.cabecalho = 'Cupom · ' + (loja || 'foto') + (r.formaPagamento ? ' · ' + rotuloPagamento_(r.formaPagamento) : '') + (nFotos > 1 ? ' · ' + nFotos + ' fotos' : '');
     r.parcelas = Math.max(1, Math.min(48, Math.floor(num_(b.parcelas) || r.parcelas || 1)));
     r.itensResumo = resumoItens_(b);
     r.observacao = observacao_(b);
@@ -304,8 +320,28 @@ const Cupom = (function () {
     }
   }
 
+  const TTL_GRUPO = 21600;
+
+  /** Rascunho de cupom ainda aberto a que esta foto pertence (álbum ou resposta). */
+  function rascunhoDaFoto_(msg, chatId) {
+    const cache = CacheService.getScriptCache();
+    let chave = '';
+    if (msg.media_group_id) chave = cache.get('grupo_' + chatId + '_' + msg.media_group_id) || '';
+    if (!chave && msg.reply_to_message) chave = cache.get('msgr_' + chatId + '_' + msg.reply_to_message.message_id) || '';
+    const r = chave ? Rascunho.ler(chave) : null;
+    return r && r.estado === 'aberto' && r.origem === 'cupom' ? r : null;
+  }
+
+  /** Consulta a SEFAZ quando dá (chave válida de NFC-e e portal que atende o Google). */
+  function urlSefaz_(b) {
+    const chave = String(b.chave_acesso || '').replace(/\D/g, '');
+    const url = Sefaz.ehNfce(chave) ? Sefaz.urlDaChave(chave) : '';
+    return url && Sefaz.consultavel(url) ? url : '';
+  }
+
   /**
    * Ponto de entrada: foto ou documento recebido no Telegram.
+   * Várias fotos do mesmo cupom (álbum, ou respondendo ao rascunho) viram uma leitura só.
    */
   function processar(msg, chatId, usuarioId, quem) {
     const arquivo = arquivoDaMensagem(msg);
@@ -313,10 +349,23 @@ const Cupom = (function () {
     Telegram.digitando(chatId);
     const legenda = String(msg.caption || '').trim();
     const ctx = Contexto.carregar();
+    const cache = CacheService.getScriptCache();
+    const grupo = msg.media_group_id ? 'grupo_' + chatId + '_' + msg.media_group_id : '';
+
+    // Foto que continua um cupom já aberto
+    const existente = rascunhoDaFoto_(msg, chatId);
+    if (existente) return acrescentarFoto_(existente, arquivo, legenda, ctx);
+
+    // Partes de um álbum que ainda não formaram um cupom reconhecível
+    let fotos = [arquivo];
+    const pendKey = grupo ? grupo + '_pend' : '';
+    if (pendKey) {
+      try { fotos = JSON.parse(cache.get(pendKey) || '[]').concat([arquivo]); } catch (e) { fotos = [arquivo]; }
+    }
 
     let b;
     try {
-      b = lerImagem_(arquivo, ctx, quem, legenda);
+      b = lerImagens_(fotos, ctx, quem, legenda);
     } catch (err) {
       console.error('cupom: ' + (err && err.stack ? err.stack : err));
       Telegram.enviar(chatId, 'Não consegui ler a foto: ' + Telegram.esc(String(err.message || err)));
@@ -324,21 +373,29 @@ const Cupom = (function () {
     }
 
     if (!b.e_comprovante) {
-      Telegram.enviar(chatId, 'Não reconheci um cupom ou comprovante nessa foto. Se for um gasto, mande a foto do cupom ou escreva, como "almoço 32,50 débito itaú".');
+      if (pendKey && fotos.length === 1) {
+        // Primeira foto do álbum pode ser só o meio do cupom: espera as próximas
+        cache.put(pendKey, JSON.stringify(fotos), TTL_GRUPO);
+        return true;
+      }
+      Telegram.enviar(chatId, 'Não reconheci um cupom ou comprovante ' + (fotos.length > 1 ? 'nessas fotos' : 'nessa foto') + '. Se for um gasto, mande a foto do cupom ou escreva, como "almoço 32,50 débito itaú".');
       return true;
     }
 
     const r = rascunhoVazio_(chatId, usuarioId, quem, legenda);
     r.tipo = b.tipo === 'receita' ? 'receita' : 'despesa';
+    r.fotos = fotos;
     aplicarLeitura_(r, b, ctx);
     procurarParecido_(r);
 
-    // NFC-e com chave válida: mostra o que leu da foto e busca os itens oficiais
-    const chave = String(b.chave_acesso || '').replace(/\D/g, '');
-    const url = Sefaz.ehNfce(chave) ? Sefaz.urlDaChave(chave) : '';
+    const url = urlSefaz_(b);
     if (url) r.sefaz = 'buscando';
 
     const rasc = Rascunho.criar(r);
+    if (grupo) {
+      cache.put(grupo, rasc.chave, TTL_GRUPO);
+      if (pendKey) cache.remove(pendKey);
+    }
     Rascunho.mostrarNovo(rasc, ctx);
     if (url) {
       Telegram.digitando(chatId);
@@ -346,6 +403,41 @@ const Cupom = (function () {
       Rascunho.salvar(rasc);
       Rascunho.atualizar(rasc, ctx);
     }
+    return true;
+  }
+
+  /** Mais uma foto do mesmo cupom: relê todas juntas e atualiza o rascunho. */
+  function acrescentarFoto_(r, arquivo, legenda, ctx) {
+    r.fotos = (r.fotos || []).concat([arquivo]);
+    if (r.fotos.length > MAX_FOTOS) {
+      Telegram.enviar(r.chatId, 'Esse cupom já tem ' + MAX_FOTOS + ' fotos, o máximo que eu leio de uma vez.');
+      return true;
+    }
+    if (legenda && !r.textoOriginal) r.textoOriginal = legenda;
+    let b;
+    try {
+      b = lerImagens_(r.fotos, ctx, r.quem, r.textoOriginal || '');
+    } catch (err) {
+      console.error('cupom (mais fotos): ' + (err && err.stack ? err.stack : err));
+      Telegram.enviar(r.chatId, 'Não consegui ler a foto nova: ' + Telegram.esc(String(err.message || err)));
+      return true;
+    }
+    if (!b.e_comprovante) { Rascunho.salvar(r); return true; }
+
+    // O que a pessoa já escolheu no rascunho continua valendo
+    const escolhida = r.categoria !== r.categoriaSugerida ? r.categoria : null;
+    if (r.sefaz !== 'ok') {
+      aplicarLeitura_(r, b, ctx);
+      if (escolhida !== null) r.categoria = escolhida;
+      procurarParecido_(r);
+    }
+    const url = r.sefaz ? '' : urlSefaz_(b);
+    if (url) {
+      completarPelaSefaz_(r, url, ctx);
+      if (escolhida !== null) r.categoria = escolhida;
+    }
+    Rascunho.salvar(r);
+    Rascunho.atualizar(r, ctx);
     return true;
   }
 

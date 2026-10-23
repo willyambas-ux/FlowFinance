@@ -205,6 +205,8 @@ const Rascunho = (function () {
     if (resp && resp.ok) {
       r.messageId = resp.result.message_id;
       salvar(r);
+      // Para achar o rascunho quando a pessoa responder a ele (ex.: mais uma foto do cupom)
+      cache_().put('msgr_' + r.chatId + '_' + r.messageId, r.chave, TTL);
     }
   }
 

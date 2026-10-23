@@ -37,12 +37,17 @@ Mande a foto (ou um PDF) do cupom fiscal, da NFC-e ou do comprovante de Pix/maqu
 - Se a foto chega primeiro, a notificação do mesmo valor depois só avisa que já está lançado.
 - A foto em si ainda não é guardada (precisaria de acesso ao Google Drive).
 
+### Cupom comprido em várias fotos
+
+O Telegram reduz cada foto a ~1280 px; num cupom de mercado inteiro numa foto só, as letras ficam ilegíveis. Mande o cupom em 2 a 6 fotos de uma vez (álbum), de cima para baixo: o bot relê todas juntas a cada foto que chega, no mesmo rascunho, sem repetir o item da emenda. Para acrescentar uma parte depois, responda ao rascunho com a foto. A categoria que você já escolheu no rascunho é mantida.
+
 ### Itens oficiais pela SEFAZ
 
 Desde set/2025 o QR code da NFC-e (versão 3) é só a chave de acesso. Quando a foto é de uma NFC-e, o bot confere a chave (dígito verificador), consulta a nota no portal da SEFAZ do estado (2 primeiros dígitos da chave; URLs da tabela do ACBr em `Sefaz.js`) e a IA lê o texto da página. Itens, quantidades, valor pago e forma de pagamento passam a ser os oficiais; a foto vira só o ponto de partida.
 
 - O rascunho aparece na hora com o que veio da foto ("Buscando a nota na SEFAZ…") e se atualiza sozinho ("Itens conferidos na SEFAZ").
 - Se a SEFAZ falhar (fora do ar, captcha, página que depende de JavaScript), fica o que foi lido da foto, com o motivo no rascunho. O motivo também aparece nos registros de execução.
+- O portal do RN (nfce.sefaz.rn.gov.br) só atende acessos de dentro do Brasil (testado a partir do Google e do GitHub em 23/10/2026); para notas do RN o bot nem tenta e fica com a foto. Propriedade `SEFAZ_RN_DIRETO = 1` reativa a tentativa, se um dia liberarem.
 - Também funciona sem foto: compartilhe o link do QR code (lido pela câmera) com o bot ou digite a chave de 44 dígitos.
 
 ### Histórico de preços

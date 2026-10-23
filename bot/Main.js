@@ -130,7 +130,7 @@ function tratarMensagem_(msg) {
       '<i>recebi 500 do freela no BB</i>',
       '',
       'Ou mande a <b>foto do cupom</b> ou do comprovante (Pix, maquininha). Na legenda, se quiser, diga o pagamento: <i>xp</i>, <i>itaú</i>.',
-      'Nota fiscal (NFC-e): confiro os itens na SEFAZ. Também vale mandar o link do QR code ou a chave de 44 dígitos.',
+      'Cupom comprido (mercado): mande em várias fotos de uma vez (álbum), de cima para baixo. Esqueceu uma parte? Responda ao rascunho com a foto que faltou.',
       '',
       'Também respondo perguntas:',
       '<i>quanto gastei em mercado este mês?</i>',

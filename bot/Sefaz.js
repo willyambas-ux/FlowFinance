@@ -249,6 +249,11 @@ const Sefaz = (function () {
   // o endereço antigo nfce.set.rn.gov.br hoje só devolve 404.
   const SO_DO_BRASIL = /nfce\.(sefaz|set)\.rn\.gov\.br/i;
 
+  /** Dá para consultar este portal daqui? (o do RN não atende o Google) */
+  function consultavel(url) {
+    return !(SO_DO_BRASIL.test(String(url)) && Config.get('SEFAZ_RN_DIRETO') !== '1');
+  }
+
   function buscarTexto(url) {
     // O Apps Script recusa "|" sem codificar na URL
     url = String(url).replace(/\|/g, '%7C');
@@ -331,6 +336,7 @@ const Sefaz = (function () {
     xmlParaTexto: xmlParaTexto,
     buscarTexto: buscarTexto,
     diagnosticar: diagnosticar,
+    consultavel: consultavel,
     emPausa: emPausa,
     liberar: liberar
   };
