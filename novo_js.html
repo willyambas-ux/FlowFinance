@@ -178,6 +178,7 @@ function desenhar() {
   if (S.aba === 'mes') tela.innerHTML = telaMesG();
   else if (S.aba === 'revisar') tela.innerHTML = telaRevisarG();
   else if (S.aba === 'movimentos') tela.innerHTML = telaMovG();
+  else if (S.aba === 'cartoes' || S.aba === 'relatorios' || S.aba === 'planejamento') tela.innerHTML = telaG2(S.aba);
   else if (S.aba === 'inicio') tela.innerHTML = telaInicio();
   else if (S.aba === 'lancamentos') tela.innerHTML = telaLancamentos();
   else if (S.aba === 'painel') tela.innerHTML = telaPainel();
@@ -218,6 +219,7 @@ function carregarAba(forcar) {
       p = run('appPainel', m.ano, m.mes).then(d => { if (S.painelMes === m) S.painel = d; });
     }
   }
+  if (!p && typeof carregarAbaG2 === 'function') p = carregarAbaG2(aba, forcar, velho);
   if (!p) return Promise.resolve();
   marcarCarregando(true);
   return p.then(function () {

@@ -8,7 +8,8 @@ const Init = (function () {
     'Cartoes':       ['id','nome','conta_pagamento','dia_fechamento','dia_vencimento','limite','bandeira','icone','icone_url','ativo','criado_em'],
     'Categorias':    ['id','nome','pai','tipo','icone','criado_em','natureza'],
     'Centros':       ['id','nome','tipo','cor','criado_em'],
-    'Projetos':      ['id','nome','valor_meta','data_alvo','conta_vinculada','criado_em'],
+    // tipo: meta (objetivo de economia) | provisao (gasto anual: mes_vencimento 1–12)
+    'Projetos':      ['id','nome','valor_meta','data_alvo','conta_vinculada','criado_em','tipo','mes_vencimento'],
     'Tags':          ['id','nome','criado_em'],
     'Contatos':      ['id','nome','tipo','criado_em'],
     'Itens':         ['id','data','lancamento_id','loja','cnpj','descricao_cupom','produto','marca','categoria_item','quantidade','unidade','valor_unitario','valor_total','desconto','chave_nfce','quem','criado_em'],

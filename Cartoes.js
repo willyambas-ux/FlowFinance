@@ -194,10 +194,13 @@ function getFatura(cartaoId, ano, mes) {
     if (comp === yymm || (!comp && String(l.data).slice(0, 7) === yymm)) totalPago += v;
   });
 
-  // Status: paga (tem pagamento) | fechada (passou do fechamento, sem pagar) | aberta
+  // Status: paga (pagou tudo) | parcial (pagou parte) | fechada (passou do fechamento, sem pagar) | aberta
   const hoje = Utils.today();
+  const devido = Math.max(0, -total);
+  const restante = Math.max(0, Math.round((devido - totalPago) * 100) / 100);
   let status = 'aberta';
-  if (totalPago > 0.01) status = 'paga';
+  if (totalPago > 0.01 && restante < 0.01) status = 'paga';
+  else if (totalPago > 0.01) status = 'parcial';
   else if (hoje > ciclo.fim) status = 'fechada';
 
   return {
@@ -207,6 +210,7 @@ function getFatura(cartaoId, ano, mes) {
     lancamentos: lancs,
     total: total,
     total_pago: totalPago,
+    restante: restante,
     status: status
   };
 }
@@ -333,13 +337,15 @@ function getCartaoPainel(cartaoId, ano, mes, atras, frente) {
     try { ciclo = getFaturaCiclo_(cartao, a, m); } catch (e) {}
     const venc = ciclo ? ciclo.vencimento : (yymm + '-01');
     let status = 'aberta';
-    if (pago > 0.01) status = 'paga';
+    if (pago > 0.01 && pago >= Math.abs(total) - 0.01) status = 'paga';
+    else if (pago > 0.01) status = 'parcial';
     else if (ciclo && hoje > ciclo.fim) status = 'fechada';
 
     const item = {
       ano: a, mes: m, competencia: yymm,
       vencimento: venc,
       total: Math.abs(total),
+      pago: pago,
       qtd: qtd,
       status: status,
       central: yymm === yymmCentral
@@ -366,9 +372,12 @@ function getCartaoPainel(cartaoId, ano, mes, atras, frente) {
  *   - Entrada no cartão (positiva, reduz saldo devedor).
  * Lançamentos originais (compras) permanecem no histórico do cartão.
  */
-function pagarFatura(cartaoId, ano, mes, dataPagamento, status, contaPagamentoOverride) {
+function pagarFatura(cartaoId, ano, mes, dataPagamento, status, contaPagamentoOverride, valorPagar) {
   const fatura = getFatura(cartaoId, ano, mes);
   if (Math.abs(fatura.total) < 0.01) throw new Error('Fatura sem valor para pagar.');
+  // Pagamento parcial: valorPagar (positivo) no lugar do total da fatura
+  const vp = Math.abs(Utils.toNumber(valorPagar));
+  if (vp > 0) fatura.total = -vp;
 
   const cartao = fatura.cartao;
   const contaDebito = String(contaPagamentoOverride || cartao.conta_pagamento || '').trim();
