@@ -36,7 +36,8 @@ const Rascunho = (function () {
   function textoResumo_(r, ctx, titulo) {
     const L = [];
     const tipo = r.tipo === 'receita' ? 'Receita' : 'Despesa';
-    L.push(titulo ? '<b>' + titulo + '</b>' : '');
+    if (titulo) L.push('<b>' + titulo + '</b>');
+    else if (r.cabecalho) L.push('<i>' + Telegram.esc(r.cabecalho) + '</i>');
     L.push('<b>' + tipo + ' · ' + (faltaValor_(r) ? 'valor?' : Formato.brl(r.valor)) + '</b>');
     L.push(Telegram.esc(r.descricao));
 
@@ -164,9 +165,9 @@ const Rascunho = (function () {
       cartao: r.cartao || '',
       categoria: r.categoria || '',
       status: r.data > hoje ? 'agendado' : 'confirmado',
-      origem: 'telegram',
+      origem: r.origem || 'telegram',
       quem: r.quem,
-      observacao: 'Telegram: ' + String(r.textoOriginal || '').slice(0, 200)
+      observacao: (r.origem === 'notificacao' ? 'Notificação: ' : 'Telegram: ') + String(r.textoOriginal || '').slice(0, 200)
     };
 
     let criados;

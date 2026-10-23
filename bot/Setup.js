@@ -104,6 +104,38 @@ function configurarComandos() {
   console.log(r.ok ? 'Comandos configurados.' : 'Erro: ' + r.description);
 }
 
+/** Mostra o endereço que vai no MacroDroid de cada pessoa. Não compartilhe: ele contém o segredo. */
+function instrucoesMacroDroid() {
+  const url = Config.get('WEBAPP_URL');
+  const segredo = Config.segredo();
+  if (!url || !segredo) { console.log('Falta WEBAPP_URL ou WEBHOOK_SECRET.'); return; }
+  const usuarios = Config.usuarios();
+  Object.keys(usuarios).forEach(id => {
+    console.log(usuarios[id] + ':\n' + url + '?secret=' + segredo + '&origem=notificacao&uid=' + id);
+  });
+}
+
+/** Mostra como o bot lê cada exemplo de notificação, sem lançar nada. */
+function testarNotificacoes() {
+  const ctx = Contexto.carregar();
+  const exemplos = [
+    ['XP Investimentos', 'Cartão XP', 'Compra de R$ 19,93 APROVADA em DL via cartão digital.'],
+    ['XP Investimentos', 'Cartão XP', 'Compra de R$ 11,95 APROVADA em DL*UberRides via cartão digital.'],
+    ['XP Investimentos', 'Pix realizado', 'Você enviou um Pix para AMAZON SERVICOS DE VAREJO DO BRASIL LTDA no valor de R$ 41,40.'],
+    ['Itaú', 'Sua compra foi aprovada', 'Olá! Compra aprovada de R$ 26,28 em EXTRA 7424 no dia 23/10 às 07:26 no seu cartão Itau. Boas compras.'],
+    ['Carteira do Google', 'EXTRA FARMA 7424', 'R$ 26,28 com NCC_Iti_Platinum • • 4741'],
+    ['XP Investimentos', 'Novo boleto emitido', 'Confira seu boleto ESCOLINHA FLAMENGO NATAL LTDA no valor de R$ 230,00']
+  ];
+  exemplos.forEach(e => {
+    const ex = Notificacoes.extrair(e[0], e[1], e[2]);
+    if (!ex) { console.log('IGNORADA  ' + e[1] + ' | ' + e[2]); return; }
+    const d = Notificacoes.destino(ctx, ex);
+    const c = d.cartao ? Contexto.acharCartao(ctx, d.cartao) : null;
+    const a = d.conta ? Contexto.acharConta(ctx, d.conta) : null;
+    console.log(Formato.brl(ex.valor) + ' · ' + ex.local + ' · ' + ex.data + ' · ' + (c ? c.nome : a ? a.nome : 'SEM DESTINO'));
+  });
+}
+
 function configurarWebhook() {
   const url = Config.get('WEBAPP_URL');
   const segredo = Config.segredo();

@@ -23,6 +23,16 @@ Bot do Telegram que transforma mensagens como "almoço 32,50 débito itaú" em l
 
 Para ativar o áudio: crie uma conta em console.groq.com, gere uma API key e crie a propriedade `GROQ_API_KEY` no projeto do bot. Rode `testarChaveAudio` para conferir.
 
+## Notificações do Android (Fase 2)
+
+O MacroDroid captura a notificação de compra do banco e manda ao bot, que mostra o rascunho no Telegram de quem gastou.
+
+- Lê: compras no cartão XP e Itaú/iti, Pix enviados pela XP, Carteira do Google e vale Pluxee.
+- Ignora boletos, avisos e promoções.
+- A mesma compra avisada por dois apps (banco + Carteira do Google) vira um rascunho só.
+- O cartão ou conta sai da sigla no fim do nome (41 cred XP, 42 cred ITI, 05 cc XP, 04 vr PX).
+- Rode `testarNotificacoes` para ver como cada exemplo é lido e `instrucoesMacroDroid` para pegar o endereço de cada pessoa.
+
 ## Instalação (uma vez)
 
 No Codespace, na raiz do repositório:

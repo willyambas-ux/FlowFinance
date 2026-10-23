@@ -16,6 +16,20 @@ function doPost(e) {
     if (!segredo || !e || !e.parameter || e.parameter.secret !== segredo) {
       return ok_();
     }
+
+    // Notificação de compra vinda do MacroDroid (celular Android)
+    if (e.parameter.origem === 'notificacao') {
+      const dados = Object.assign({}, e.parameter);
+      try {
+        const tipo = String(e.postData && e.postData.type || '');
+        if (tipo.indexOf('json') !== -1) Object.assign(dados, JSON.parse(e.postData.contents));
+      } catch (err) { /* corpo em formulário já está em e.parameter */ }
+      const trava = LockService.getScriptLock();
+      if (!trava.tryLock(25000)) return ok_();
+      try { Notificacoes.processar(dados); } finally { trava.releaseLock(); }
+      return ok_();
+    }
+
     const update = JSON.parse(e.postData.contents);
 
     // 2. Uma atualização por vez, e cada update_id só uma vez
