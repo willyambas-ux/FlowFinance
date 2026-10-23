@@ -223,10 +223,12 @@ const Sefaz = (function () {
       const base = URL_QR[cuf];
       if (!base) return;
       saida.push((SIGLA[cuf] || cuf) + ':');
-      [base, trocarProtocolo_(base)].forEach(u => {
-        const t = tentar_(u + '?p=1');
-        saida.push('  ' + resumo_(t));
-      });
+      const r = baixar_(base + '?p=1');
+      r.log.forEach(l => saida.push('  ' + l));
+      if (r.resp) {
+        const texto = htmlParaTexto(r.resp.getContentText());
+        saida.push('  página: ' + texto.length + ' caracteres · ' + texto.slice(0, 160).replace(/\n/g, ' / '));
+      }
     });
     return saida.join('\n');
   }
