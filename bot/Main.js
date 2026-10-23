@@ -48,12 +48,22 @@ function ok_() {
   return HtmlService.createHtmlOutput('ok');
 }
 
+const COMANDOS_CONSULTA = {
+  '/resumo': { tipo: 'resumo' },
+  '/saldos': { tipo: 'saldo' },
+  '/contas': { tipo: 'vencimentos', dias: 7 },
+  '/faturas': { tipo: 'fatura' },
+  '/orcamentos': { tipo: 'orcamentos' }
+};
+
 function tratarMensagem_(msg) {
   const chatId = msg.chat.id;
   const usuarioId = msg.from && msg.from.id;
-  const texto = String(msg.text || '').trim();
+  let texto = String(msg.text || '').trim();
+  // Em grupos o Telegram manda "/resumo@nome_do_bot"
+  const cmd = texto.charAt(0) === '/' ? texto.split(/\s+/)[0].split('@')[0].toLowerCase() : '';
 
-  if (texto === '/id') {
+  if (cmd === '/id') {
     Telegram.enviar(chatId, 'Seu ID do Telegram: <code>' + usuarioId + '</code>');
     return;
   }
@@ -64,27 +74,52 @@ function tratarMensagem_(msg) {
     return;
   }
 
-  if (!texto) {
-    Telegram.enviar(chatId, 'Por enquanto eu entendo só texto. Fotos, áudios e arquivos chegam nas próximas fases.');
+  // Áudio: transcreve e segue como se fosse texto
+  const voz = msg.voice || msg.audio;
+  if (!texto && voz) {
+    Telegram.digitando(chatId);
+    try {
+      texto = Audio.transcrever(voz.file_id);
+    } catch (err) {
+      console.error('audio: ' + (err && err.stack ? err.stack : err));
+      Telegram.enviar(chatId, 'Não consegui ouvir o áudio: ' + Telegram.esc(String(err.message || err)));
+      return;
+    }
+    if (!texto) {
+      Telegram.enviar(chatId, 'Não entendi o áudio. Pode repetir ou escrever?');
+      return;
+    }
+    Telegram.enviar(chatId, 'Ouvi: <i>' + Telegram.esc(texto) + '</i>');
+    processarTexto_(chatId, usuarioId, quem, texto);
     return;
   }
 
-  if (texto === '/start' || texto === '/ajuda') {
+  if (!texto) {
+    Telegram.enviar(chatId, 'Por enquanto eu entendo texto e áudio. Fotos e arquivos chegam nas próximas fases.');
+    return;
+  }
+
+  if (cmd === '/start' || cmd === '/ajuda') {
     Telegram.enviar(chatId, [
-      'Olá, ' + Telegram.esc(quem) + '! Me mande um gasto ou recebimento em uma frase:',
+      'Olá, ' + Telegram.esc(quem) + '! Me mande um gasto ou recebimento em uma frase, escrita ou em áudio:',
       '',
       '<i>almoço 32,50 débito itaú</i>',
       '<i>mercado nordestão 187,40 crédito xp</i>',
       '<i>tênis 600 em 3x no cartão iti</i>',
       '<i>recebi 500 do freela no BB</i>',
       '',
-      'Eu mostro o que entendi e você confirma com um toque.',
+      'Também respondo perguntas:',
+      '<i>quanto gastei em mercado este mês?</i>',
+      '<i>qual o saldo do BB?</i>',
+      '<i>o que vence esta semana?</i>',
+      '',
+      '/resumo o mês até agora · /saldos das contas · /contas a pagar em 7 dias · /faturas dos cartões · /orcamentos',
       '/desfazer apaga o seu último lançamento.'
     ].join('\n'));
     return;
   }
 
-  if (texto === '/desfazer') {
+  if (cmd === '/desfazer') {
     const chave = CacheService.getScriptCache().get('ultimo_' + usuarioId);
     const r = chave ? Rascunho.ler(chave) : null;
     if (r && Rascunho.desfazer(r)) Telegram.enviar(chatId, 'Pronto, desfeito.');
@@ -92,18 +127,33 @@ function tratarMensagem_(msg) {
     return;
   }
 
-  if (texto.charAt(0) === '/') {
+  if (COMANDOS_CONSULTA[cmd]) {
+    Telegram.digitando(chatId);
+    responderConsulta_(chatId, COMANDOS_CONSULTA[cmd]);
+    return;
+  }
+
+  if (cmd) {
     Telegram.enviar(chatId, 'Não conheço esse comando. Mande /ajuda.');
     return;
   }
 
+  processarTexto_(chatId, usuarioId, quem, texto);
+}
+
+/** Texto livre (digitado ou transcrito): lançamento, consulta ou conversa. */
+function processarTexto_(chatId, usuarioId, quem, texto) {
   Telegram.digitando(chatId);
   try {
     const ctx = Contexto.carregar();
     const lido = Interpretador.interpretar(texto, quem, ctx);
 
+    if (lido.tipo === 'consulta') {
+      responderConsulta_(chatId, lido.consulta, ctx);
+      return;
+    }
     if (lido.tipo === 'nao_e_lancamento') {
-      Telegram.enviar(chatId, Telegram.esc(lido.resposta || 'Não entendi como lançamento. Mande algo como: almoço 32,50 débito itaú'));
+      Telegram.enviar(chatId, Telegram.esc(lido.resposta || 'Não entendi. Mande um gasto, como "almoço 32,50 débito itaú", ou uma pergunta, como "quanto gastei este mês?".'));
       return;
     }
 
@@ -117,6 +167,15 @@ function tratarMensagem_(msg) {
   } catch (err) {
     console.error('interpretar: ' + (err && err.stack ? err.stack : err));
     Telegram.enviar(chatId, 'Não consegui processar agora: ' + Telegram.esc(String(err.message || err)));
+  }
+}
+
+function responderConsulta_(chatId, consulta, ctx) {
+  try {
+    Telegram.enviar(chatId, Consultas.responder(consulta, ctx));
+  } catch (err) {
+    console.error('consulta: ' + (err && err.stack ? err.stack : err));
+    Telegram.enviar(chatId, 'Não consegui consultar agora: ' + Telegram.esc(String(err.message || err)));
   }
 }
 

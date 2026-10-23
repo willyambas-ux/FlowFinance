@@ -9,6 +9,8 @@
  *   4. testarIA
  *   5. Implantar como app da Web e colar a URL em WEBAPP_URL
  *   6. configurarWebhook
+ *   7. configurarComandos (menu "/" no Telegram)
+ *   Áudio: crie GROQ_API_KEY e rode testarChaveAudio
  */
 
 function gerarSegredoWebhook() {
@@ -25,6 +27,8 @@ function verificarConfig() {
   ['TELEGRAM_TOKEN', 'ANTHROPIC_API_KEY', 'WEBHOOK_SECRET', 'USUARIOS', 'WEBAPP_URL'].forEach(k => {
     linhas.push((Config.get(k) ? 'OK      ' : 'FALTA   ') + k);
   });
+
+  linhas.push((Config.get('GROQ_API_KEY') ? 'OK      ' : 'FALTA   ') + 'GROQ_API_KEY (só para áudio)');
 
   const usuarios = Config.usuarios();
   linhas.push('Usuários liberados: ' + (Object.keys(usuarios).length
@@ -54,13 +58,50 @@ function testarIA() {
     'mercado nordestão 187,40 no crédito xp',
     'paguei 150 no posto',
     'recebi 500 do freela no BB ontem',
-    'tênis 600 em 3x no cartão iti'
+    'tênis 600 em 3x no cartão iti',
+    'quanto gastei em mercado este mês?',
+    'qual o saldo do BB?',
+    'o que vence esta semana?'
   ];
   const ctx = Contexto.carregar();
   frases.forEach(f => {
     const r = Interpretador.interpretar(f, 'Teste', ctx);
     console.log(f + '\n' + JSON.stringify(r, null, 2));
   });
+}
+
+/** Testa as consultas sem passar pelo Telegram nem pela IA. */
+function testarConsultas() {
+  const ctx = Contexto.carregar();
+  Consultas.TIPOS.forEach(tipo => {
+    console.log('--- ' + tipo + '\n' + Consultas.responder({ tipo: tipo }, ctx).replace(/<[^>]+>/g, ''));
+  });
+}
+
+/** Confere se a chave da Groq (transcrição de áudio) é aceita. */
+function testarChaveAudio() {
+  const chave = Config.get('GROQ_API_KEY');
+  if (!chave) { console.log('Falta GROQ_API_KEY.'); return; }
+  const resp = UrlFetchApp.fetch('https://api.groq.com/openai/v1/models', {
+    headers: { Authorization: 'Bearer ' + chave }, muteHttpExceptions: true
+  });
+  console.log(resp.getResponseCode() === 200 ? 'Chave da Groq OK.' : 'Chave da Groq com problema: ' + resp.getContentText().slice(0, 200));
+}
+
+/** Mostra os comandos no menu "/" do Telegram. Rode uma vez. */
+function configurarComandos() {
+  const r = Telegram.chamar('setMyCommands', {
+    commands: [
+      { command: 'resumo', description: 'Resumo do mês até agora' },
+      { command: 'saldos', description: 'Saldos das contas' },
+      { command: 'contas', description: 'Contas a pagar nos próximos 7 dias' },
+      { command: 'faturas', description: 'Faturas dos cartões' },
+      { command: 'orcamentos', description: 'Situação dos orçamentos' },
+      { command: 'desfazer', description: 'Apaga o seu último lançamento' },
+      { command: 'ajuda', description: 'Exemplos do que posso fazer' }
+    ]
+  });
+  console.log(r.ok ? 'Comandos configurados.' : 'Erro: ' + r.description);
 }
 
 function configurarWebhook() {

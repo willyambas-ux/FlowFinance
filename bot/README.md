@@ -15,6 +15,14 @@ Bot do Telegram que transforma mensagens como "almoço 32,50 débito itaú" em l
 - Cada lançamento grava `origem = telegram` e `quem` (quem mandou).
 - Comandos: `/start`, `/ajuda`, `/desfazer`, `/id`.
 
+## Consultas e áudio
+
+- Perguntas em texto ou áudio: "quanto gastei em mercado este mês?", "qual o saldo do BB?", "o que vence esta semana?", "como está a fatura do XP?".
+- Comandos: `/resumo`, `/saldos`, `/contas` (a pagar em 7 dias), `/faturas`, `/orcamentos`.
+- Áudio: o bot transcreve a voz com o Whisper da Groq (gratuito) e segue como se fosse texto, mostrando o que ouviu.
+
+Para ativar o áudio: crie uma conta em console.groq.com, gere uma API key e crie a propriedade `GROQ_API_KEY` no projeto do bot. Rode `testarChaveAudio` para conferir.
+
 ## Instalação (uma vez)
 
 No Codespace, na raiz do repositório:
