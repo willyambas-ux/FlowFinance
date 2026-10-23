@@ -193,7 +193,8 @@ const Sefaz = (function () {
     const log = [];
     let atual = url;
     const vistos = {};
-    for (let passo = 0; passo < 6; passo++) {
+    const inicio = Date.now();
+    for (let passo = 0; passo < 6 && Date.now() - inicio < 30000; passo++) {
       let t = tentar_(atual);
       log.push(resumo_(t));
       if (t.erro) {
@@ -231,7 +232,10 @@ const Sefaz = (function () {
     url = String(url).replace(/\|/g, '%7C');
     let r = null;
     const logs = [];
+    const inicio = Date.now();
     for (const u of candidatos_(url)) {
+      // Cada tentativa pode esperar muito por um portal lento: limite total de ~30 s
+      if (logs.length && Date.now() - inicio > 30000) { logs.push('desisti por tempo'); break; }
       r = baixar_(u);
       logs.push(r.log.join(' | '));
       if (r.resp && r.status === 200) break;
@@ -239,6 +243,7 @@ const Sefaz = (function () {
     console.log('SEFAZ: ' + logs.join(' || '));
     if (!r.resp) {
       const ultimo = logs.join(' ');
+      if (/desisti por tempo|timeout|tempo limite|timed out/i.test(ultimo)) throw new Error('o portal da SEFAZ não respondeu a tempo');
       throw new Error(/ssl|tls|handshake|certificate/i.test(ultimo)
         ? 'o portal da SEFAZ usa uma conexão segura que o Google não aceita'
         : 'não consegui abrir o portal da SEFAZ');
