@@ -256,7 +256,7 @@ function cfgCategorias(d) {
       const filhas = d.categorias.filter(c => c.pai === p.id).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       return '<div class="g-cat-grupo"><button type="button" class="g-cat-btn g-cat-pai" data-cfg-item="categoria" data-id="' + esc(p.id) + '"><b>' + esc(p.nome) + '</b>' +
         (p.natureza === 'fixa' ? ' <span class="g-tag">fixa</span>' : '') + '<span class="g-suave g-pequeno">' + p.usos + '</span></button>' +
-        filhas.map(f => '<button type="button" class="g-cat-btn" data-cfg-item="categoria" data-id="' + esc(f.id) + '"><span>' + esc(f.nome) + '</span><span class="g-suave g-pequeno">' + f.usos + '</span></button>').join('') + '</div>';
+        filhas.map(f => '<button type="button" class="g-cat-btn" data-cfg-item="categoria" data-id="' + esc(f.id) + '"><span>' + esc(f.nome) + (f.natureza === 'fixa' ? ' <span class="g-tag">fixa</span>' : '') + '</span><span class="g-suave g-pequeno">' + f.usos + '</span></button>').join('') + '</div>';
     }).join('') + '</div>';
   });
   return h + '</div><p class="g-rodape">O número ao lado é quantos lançamentos usam a categoria.</p></section>';
@@ -357,7 +357,7 @@ function abrirCfg(tipo, id) {
       { id: 'nome', rotulo: 'Nome', valor: c.nome || '' },
       { id: 'pai', rotulo: 'Dentro de', tipo: 'select', opcoes: pais, valor: c.pai || '' },
       { id: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['despesa', 'Despesa'], ['receita', 'Receita']], valor: c.tipo, dica: 'subcategoria segue o tipo da principal' },
-      { id: 'fixa', rotulo: 'Custo fixo', tipo: 'check', valor: c.natureza === 'fixa', dica: 'vem todo mês quase igual (só para categorias principais)' }
+      { id: 'fixa', rotulo: 'Custo fixo', tipo: 'check', valor: c.natureza === 'fixa', dica: 'vem todo mês quase igual; numa subcategoria vale só para ela' }
     ];
     let excluir = null;
     if (id) {

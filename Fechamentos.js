@@ -28,6 +28,7 @@ function getSaldoContaNaData(contaId, dataAlvo) {
   lancs.forEach(l => {
     if (l.conta !== contaId) return;
     if (l.data > dataAlvo) return;
+    if (Utils.antesDoMarco(l, conta)) return;
     if (Utils.statusRealizado(l.status)) {
       saldo += Number(l.valor) || 0;
     }

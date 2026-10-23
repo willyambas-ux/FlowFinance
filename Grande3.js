@@ -43,7 +43,7 @@ function appConfig() {
     email: Session.getActiveUser().getEmail(),
     contas: listContas().map(c => ({
       id: String(c.id), nome: String(c.nome), tipo: String(c.tipo || 'corrente'), banco: String(c.banco || ''),
-      saldo_inicial: Number(c.saldo_inicial) || 0, data_saldo_inicial: String(c.data_saldo_inicial || '').slice(0, 10),
+      saldo_inicial: Number(c.saldo_inicial) || 0, data_saldo_inicial: Utils.dataISO(c.data_saldo_inicial),
       ativo: appAtivo_(c.ativo), reserva: Utils.toBool(c.reserva), saldo: appArred_(saldos[String(c.id)] || 0),
       usos: usoConta[c.id] || 0
     })),
@@ -116,7 +116,8 @@ function appSalvarCategoria(d) {
   }
   const atual = d.id ? listCategorias().find(c => String(c.id) === String(d.id)) : null;
   const salvo = saveCategoria(Object.assign({}, atual || {}, { id: d.id || undefined, nome: d.nome, pai: d.pai || '', tipo: d.tipo || 'despesa' }));
-  DB.update(SHEET_CATEGORIAS, salvo.id, { natureza: d.pai ? '' : (d.natureza === 'fixa' ? 'fixa' : 'variavel') });
+  // Principal: fixa/variavel. Subcategoria: 'fixa' ou vazio (herda da principal).
+  DB.update(SHEET_CATEGORIAS, salvo.id, { natureza: d.natureza === 'fixa' ? 'fixa' : (d.pai ? '' : 'variavel') });
   // Filhas acompanham o tipo do pai
   if (atual && !d.pai) {
     const patch = {};

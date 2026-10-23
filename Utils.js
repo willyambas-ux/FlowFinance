@@ -51,8 +51,27 @@ const Utils = (function () {
     return status === 'confirmado' || status === 'conciliado' || status === 'revisar';
   }
 
+  /** Data em 'yyyy-MM-dd', venha ela como Date (planilha) ou como texto. */
+  function dataISO(v) {
+    if (!v) return '';
+    if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? '' : formatDate(v);
+    return String(v).slice(0, 10);
+  }
+
+  /**
+   * Marco zero da conta: o saldo inicial é o saldo no FIM do dia data_saldo_inicial.
+   * Lançamentos até essa data (inclusive) já estão dentro dele e não entram de novo
+   * no saldo; ficam só como histórico para relatórios.
+   */
+  function antesDoMarco(l, conta) {
+    const marco = conta ? dataISO(conta.data_saldo_inicial) : '';
+    return !!marco && dataISO(l.data) <= marco;
+  }
+
   return {
     statusRealizado: statusRealizado,
+    dataISO: dataISO,
+    antesDoMarco: antesDoMarco,
     uuid: uuid,
     today: today,
     formatDate: formatDate,
