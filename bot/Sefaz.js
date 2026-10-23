@@ -22,7 +22,7 @@ const Sefaz = (function () {
     '21': 'http://www.nfce.sefaz.ma.gov.br/portal/consultarNFCe.jsp',
     '22': 'http://webas.sefaz.pi.gov.br/nfceweb/consultarNFCe.jsf',
     '23': 'http://nfce.sefaz.ce.gov.br/pages/ShowNFCe.html',
-    '24': 'http://nfce.set.rn.gov.br/consultarNFCe.aspx',
+    '24': 'https://nfce.sefaz.rn.gov.br/consultarNFCe.aspx',
     '25': 'http://www.sefaz.pb.gov.br/nfce',
     '26': 'http://nfce.sefaz.pe.gov.br/nfce-web/consultarNFCe',
     '27': 'http://nfce.sefaz.al.gov.br/QRCode/consultarNFCe.jsp',
@@ -42,6 +42,20 @@ const Sefaz = (function () {
   };
   const SIGLA = { '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO', '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA', '31': 'MG', '32': 'ES', '33': 'RJ', '35': 'SP', '41': 'PR', '42': 'SC', '43': 'RS', '50': 'MS', '51': 'MT', '52': 'GO', '53': 'DF' };
   const LIMITE_TEXTO = 40000;
+  // Endereços alternativos do mesmo portal: se um falhar (ex.: SSL antigo), tenta o outro.
+  const ALTERNATIVOS = {
+    'nfce.sefaz.rn.gov.br/consultarNFCe.aspx': ['nfce.sefaz.rn.gov.br/portalDFE/NFCe/mDadosNFCe.aspx', 'nfce.set.rn.gov.br/consultarNFCe.aspx'],
+    'nfce.set.rn.gov.br/consultarNFCe.aspx': ['nfce.sefaz.rn.gov.br/consultarNFCe.aspx', 'nfce.sefaz.rn.gov.br/portalDFE/NFCe/mDadosNFCe.aspx']
+  };
+
+  function candidatos_(url) {
+    const m = String(url).match(/^https?:\/\/([^?]+)(\?.*)?$/i);
+    if (!m) return [url];
+    const caminho = m[1], query = m[2] || '';
+    const lista = [url];
+    (ALTERNATIVOS[caminho] || []).forEach(alt => lista.push('https://' + alt + query));
+    return lista;
+  }
 
   /** Chave de 44 dígitos com dígito verificador (módulo 11) correto. */
   function chaveValida(chave) {
@@ -215,10 +229,16 @@ const Sefaz = (function () {
   function buscarTexto(url) {
     // O Apps Script recusa "|" sem codificar na URL
     url = String(url).replace(/\|/g, '%7C');
-    const r = baixar_(url);
-    console.log('SEFAZ: ' + r.log.join(' | '));
+    let r = null;
+    const logs = [];
+    for (const u of candidatos_(url)) {
+      r = baixar_(u);
+      logs.push(r.log.join(' | '));
+      if (r.resp && r.status === 200) break;
+    }
+    console.log('SEFAZ: ' + logs.join(' || '));
     if (!r.resp) {
-      const ultimo = r.log[r.log.length - 1] || '';
+      const ultimo = logs.join(' ');
       throw new Error(/ssl|tls|handshake|certificate/i.test(ultimo)
         ? 'o portal da SEFAZ usa uma conexão segura que o Google não aceita'
         : 'não consegui abrir o portal da SEFAZ');
@@ -248,9 +268,13 @@ const Sefaz = (function () {
       const base = URL_QR[cuf];
       if (!base) return;
       saida.push((SIGLA[cuf] || cuf) + ':');
-      const r = baixar_(base + '?p=1');
-      r.log.forEach(l => saida.push('  ' + l));
-      if (r.resp) {
+      let r = null;
+      for (const u of candidatos_(base + '?p=1')) {
+        r = baixar_(u);
+        r.log.forEach(l => saida.push('  ' + l));
+        if (r.resp) break;
+      }
+      if (r && r.resp) {
         const bruto = r.resp.getContentText();
         const xml = ehXml_(bruto, String((r.resp.getHeaders() || {})['Content-Type'] || ''));
         const texto = xml ? xmlParaTexto(bruto) : htmlParaTexto(bruto);
