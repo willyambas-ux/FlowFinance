@@ -17,6 +17,15 @@ const S = {
   filtro: 'tudo',
   busca: '',
   saldoAberto: false,
+  grande: false,
+  mesMes: null,
+  mesDados: null,
+  saldosDia: null,
+  sel: new Set(),
+  revDetalhe: null,
+  fConta: '',
+  fCat: '',
+  fQuem: '',
   carregadoEm: {}
 };
 
@@ -154,10 +163,10 @@ function erro(e) { aviso((e && e.message) || String(e), { erro: true }); }
 
 function mostrarAba(aba) {
   S.aba = aba;
-  document.querySelectorAll('.aba').forEach(b => {
+  document.querySelectorAll('.aba, .lat-item').forEach(b => {
     if (b.dataset.aba === aba) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  document.getElementById('app').classList.toggle('com-rapido', aba === 'inicio');
+  document.getElementById('app').classList.toggle('com-rapido', aba === 'inicio' && !S.grande);
   window.scrollTo(0, 0);
   desenhar();
   carregarAba(false);
@@ -165,7 +174,11 @@ function mostrarAba(aba) {
 
 function desenhar() {
   const tela = document.getElementById('tela');
-  if (S.aba === 'inicio') tela.innerHTML = telaInicio();
+  if (S.grande) desenharLateral();
+  if (S.aba === 'mes') tela.innerHTML = telaMesG();
+  else if (S.aba === 'revisar') tela.innerHTML = telaRevisarG();
+  else if (S.aba === 'movimentos') tela.innerHTML = telaMovG();
+  else if (S.aba === 'inicio') tela.innerHTML = telaInicio();
   else if (S.aba === 'lancamentos') tela.innerHTML = telaLancamentos();
   else if (S.aba === 'painel') tela.innerHTML = telaPainel();
   else tela.innerHTML = telaMais();
@@ -177,8 +190,21 @@ function carregarAba(forcar) {
   const aba = S.aba;
   const velho = Date.now() - (S.carregadoEm[aba] || 0) > 60000;
   let p = null;
-  if (aba === 'inicio' && (forcar || !S.inicio || velho)) {
+  if ((aba === 'inicio' || aba === 'revisar') && (forcar || !S.inicio || velho)) {
     p = run('appInicio').then(d => { S.inicio = d; });
+  } else if (aba === 'mes') {
+    if (!S.mesMes) S.mesMes = mesAtual();
+    if (forcar || !S.mesDados || velho) {
+      const m = S.mesMes;
+      p = run('appMes', m.ano, m.mes).then(d => { if (S.mesMes === m) S.mesDados = d; });
+      if (!S.inicio) run('appInicio').then(d => { S.inicio = d; if (S.grande) desenharLateral(); }).catch(function () {});
+    }
+  } else if (aba === 'movimentos') {
+    if (!S.listaMes) S.listaMes = mesAtual();
+    if (forcar || !S.lista || velho) {
+      const m = S.listaMes;
+      p = run('appMovimentos', m.ano, m.mes).then(d => { if (S.listaMes === m) { S.lista = d.itens; S.saldosDia = d.saldos; } });
+    }
   } else if (aba === 'lancamentos') {
     if (!S.listaMes) S.listaMes = mesAtual();
     if (forcar || !S.lista || velho) {
@@ -216,6 +242,10 @@ function marcarCarregando(sim) {
  */
 function invalidar() {
   S.carregadoEm = {};
+  // Na tela grande o contador de "Revisar" do menu também precisa atualizar
+  if (S.grande && S.aba !== 'revisar' && S.aba !== 'inicio') {
+    run('appInicio').then(d => { S.inicio = d; desenharLateral(); }).catch(function () {});
+  }
   return carregarAba(true);
 }
 
@@ -524,7 +554,7 @@ function telaPainel() {
 function graficoProjecao(d) {
   const pts = d.projecao || [];
   if (pts.length < 2) return '<p class="nota" style="margin:0">Sem contas para projetar.</p>';
-  const W = 340, H = 140, topo = 12, base = 112;
+  const W = d.largura || 340, H = d.altura || 140, topo = 12, base = H - 28;
   let min = Math.min.apply(null, pts.map(p => p.saldo));
   let max = Math.max.apply(null, pts.map(p => p.saldo));
   if (max === min) { max += 1; min -= 1; }
@@ -551,7 +581,18 @@ function graficoProjecao(d) {
     const tx = Math.min(W - 26, Math.max(26, x(iHoje)));
     s += '<text class="rotulo-forte" x="' + tx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">hoje</text>';
   }
-  s += '<text x="0" y="' + (H - 6) + '">1</text><text x="' + W + '" y="' + (H - 6) + '" text-anchor="end">' + pts.length + '</text>';
+  const iMes = d.inicio_proximo ? pts.findIndex(p => p.data === d.inicio_proximo) : -1;
+  if (iMes > 0) {
+    s += '<line class="grade" x1="' + x(iMes).toFixed(1) + '" y1="' + topo + '" x2="' + x(iMes).toFixed(1) + '" y2="' + base + '"/>';
+    const pm = dataObj(d.inicio_proximo);
+    s += '<text x="' + (x(iMes) + 4).toFixed(1) + '" y="' + (topo + 10) + '">' + MESES_CURTOS[pm.getMonth()] + '</text>';
+  }
+  if (iMenor >= 0 && d.largura) {
+    s += '<text class="rotulo-forte" x="' + Math.min(W - 40, Math.max(40, x(iMenor))).toFixed(1) + '" y="' + (y(pts[iMenor].saldo) - 10).toFixed(1) + '" text-anchor="middle">' + esc(curto(pts[iMenor].saldo)) + '</text>';
+  }
+  const p0 = dataObj(pts[0].data), pf = dataObj(pts[pts.length - 1].data);
+  s += '<text x="0" y="' + (H - 6) + '">' + p0.getDate() + (iMes > 0 ? ' ' + MESES_CURTOS[p0.getMonth()] : '') + '</text>' +
+    '<text x="' + W + '" y="' + (H - 6) + '" text-anchor="end">' + pf.getDate() + (iMes > 0 ? ' ' + MESES_CURTOS[pf.getMonth()] : '') + '</text>';
   s += '<text x="' + W + '" y="10" text-anchor="end">' + esc(curto(max - folga)) + '</text>';
   return s + '</svg>';
 }
@@ -1005,6 +1046,7 @@ function ligarTela() {
   if (nome) nome.onclick = trocarNome;
   const travar = tela.querySelector('[data-acao="travar"]');
   if (travar) travar.onclick = function () { Trava.travar(); };
+  if (S.grande) ligarTelaGrande(tela);
 }
 
 function ligarItens(tela) {
@@ -1120,7 +1162,7 @@ function iniciarApp() {
   Trava.iniciar(function () {
     run('appBoot').then(function (b) {
       S.boot = b;
-      mostrarAba('inicio');
+      iniciarModo();
     }).catch(function (e) {
       document.getElementById('tela').innerHTML = falhaTela(e.message || e);
       const bt = document.querySelector('[data-acao="atualizar"]');
