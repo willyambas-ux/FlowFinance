@@ -444,8 +444,10 @@ function getFluxoCaixa(ano, mes, contasIds) {
   if (contas.length === 0) return [];
 
   const contaIdSet = new Set(contas.map(c => String(c.id)));
+  const contaPorId = {};
+  contas.forEach(c => { contaPorId[String(c.id)] = c; });
   const lancs = DB.readAll(SHEET_LANCAMENTOS).filter(l =>
-    l.conta && contaIdSet.has(String(l.conta))
+    l.conta && contaIdSet.has(String(l.conta)) && !Utils.antesDoMarco(l, contaPorId[String(l.conta)])
   );
   lancs.sort((a, b) => String(a.data).localeCompare(String(b.data)));
 
@@ -518,11 +520,13 @@ function getMovimentacoesView(ano, mes, contasIds, statusList, cartoesIds) {
   // Calcula POR CONTA pra permitir agrupamento no frontend, e mantém os totais agregados.
   const saldoAnteriorPorConta = {}; // contaId -> valor
   contasOp.forEach(c => { saldoAnteriorPorConta[c.id] = Number(c.saldo_inicial) || 0; });
+  const contaOpPorId = {};
+  contasOp.forEach(c => { contaOpPorId[String(c.id)] = c; });
   let saldoAnteriorCartoes = 0;
   lancsAll.forEach(l => {
     if (l.data >= r.start) return;
     if (l.conta && contasOpSet.has(String(l.conta))) {
-      if (Utils.statusRealizado(l.status)) {
+      if (Utils.statusRealizado(l.status) && !Utils.antesDoMarco(l, contaOpPorId[String(l.conta)])) {
         saldoAnteriorPorConta[l.conta] = (saldoAnteriorPorConta[l.conta] || 0) + (Number(l.valor) || 0);
       }
     } else if (l.cartao && cartoesSet.has(String(l.cartao))) {
@@ -818,6 +822,7 @@ function getSaldosContas(ate) {
     let projetado = ini;
     lancs.forEach(l => {
       if (l.conta !== conta.id) return;
+      if (Utils.antesDoMarco(l, conta)) return;
       const v = Number(l.valor) || 0;
       if (!limite || l.data <= limite) projetado += v;
       if (Utils.statusRealizado(l.status)) confirmado += v;

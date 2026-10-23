@@ -265,17 +265,24 @@ function appExcluirDecisao(id) {
 
 function appIndicadoresConfig() {
   Init.ensureAllSheets();
-  const cats = listCategorias()
-    .filter(c => c.tipo === 'despesa' && !c.pai)
-    .map(c => ({ id: String(c.id), nome: String(c.nome), fixa: c.natureza === 'fixa' }))
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const todas = listCategorias().filter(c => c.tipo === 'despesa');
+  const nomePor = {};
+  todas.forEach(c => { nomePor[String(c.id)] = String(c.nome); });
+  // Principais e subcategorias: uma sub pode ser fixa mesmo com a principal variável
+  // (ex.: Casa › Condomínio fixa, Casa › Manutenção variável).
+  const cats = todas
+    .map(c => ({
+      id: String(c.id), nome: String(c.nome), fixa: c.natureza === 'fixa',
+      pai: String(c.pai || ''), grupo: c.pai ? (nomePor[String(c.pai)] || '') : String(c.nome)
+    }))
+    .sort((a, b) => a.grupo.localeCompare(b.grupo, 'pt-BR') || (a.pai ? 1 : 0) - (b.pai ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
   const contas = listContas()
     .filter(c => appAtivo_(c.ativo) && c.tipo !== 'emprestimo')
     .map(c => ({ id: String(c.id), nome: String(c.nome), tipo: String(c.tipo || ''), reserva: Utils.toBool(c.reserva) }));
   return { categorias: cats, contas: contas, meta_poupanca: gMetaPoupanca_() };
 }
 
-/** cfg: { fixas: [ids de categorias-pai], reservas: [ids de contas], meta_poupanca: número } */
+/** cfg: { fixas: [ids de categorias, principais ou subs], reservas: [ids de contas], meta_poupanca: número } */
 function appSalvarIndicadores(cfg) {
   cfg = cfg || {};
   Init.ensureAllSheets();
@@ -283,8 +290,8 @@ function appSalvarIndicadores(cfg) {
   const reservas = {}; (cfg.reservas || []).forEach(id => { reservas[String(id)] = true; });
 
   const patchCats = {};
-  listCategorias().filter(c => c.tipo === 'despesa' && !c.pai).forEach(c => {
-    const nova = fixas[String(c.id)] ? 'fixa' : 'variavel';
+  listCategorias().filter(c => c.tipo === 'despesa').forEach(c => {
+    const nova = fixas[String(c.id)] ? 'fixa' : (c.pai ? '' : 'variavel');
     if (c.natureza !== nova) patchCats[String(c.id)] = { natureza: nova };
   });
   if (Object.keys(patchCats).length) DB.batchUpdate(SHEET_CATEGORIAS, patchCats);

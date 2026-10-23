@@ -216,8 +216,8 @@ function abrirConfigIndicadores() {
     run('appIndicadoresConfig').then(function (c) {
       const area = folha.querySelector('#cfg-area');
       area.innerHTML =
-        '<p class="obs" style="margin:0 0 12px">Categorias <b>fixas</b> são as que vêm todo mês quase no mesmo valor (moradia, escola, contas da casa, plano de saúde). Elas formam o custo fixo.</p>' +
-        '<div class="campos g-checks">' + c.categorias.map(x => '<label class="g-check"><input type="checkbox" name="fixa" value="' + esc(x.id) + '"' + (x.fixa ? ' checked' : '') + '><span>' + esc(x.nome) + '</span></label>').join('') + '</div>' +
+        '<p class="obs" style="margin:0 0 12px">Categorias <b>fixas</b> são as que vêm todo mês quase no mesmo valor (moradia, escola, contas da casa, plano de saúde). Elas formam o custo fixo. Marque a principal para o grupo todo ou só as subcategorias fixas.</p>' +
+        '<div class="campos g-checks">' + c.categorias.map(x => '<label class="g-check' + (x.pai ? ' g-check-sub' : ' g-check-pai') + '"><input type="checkbox" name="fixa" value="' + esc(x.id) + '"' + (x.fixa ? ' checked' : '') + '><span>' + esc(x.nome) + '</span></label>').join('') + '</div>' +
         '<p class="obs" style="margin:18px 0 12px">Conta(s) onde fica a <b>reserva de emergência</b>:</p>' +
         '<div class="campos g-checks">' + c.contas.map(x => '<label class="g-check"><input type="checkbox" name="reserva" value="' + esc(x.id) + '"' + (x.reserva ? ' checked' : '') + '><span>' + esc(x.nome) + '</span></label>').join('') + '</div>' +
         '<div class="campos" style="margin-top:18px"><div class="campo"><label for="cfg-meta">Meta de poupança</label><input id="cfg-meta" inputmode="numeric" value="' + c.meta_poupanca + '%"></div></div>' +
