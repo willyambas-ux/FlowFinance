@@ -227,9 +227,30 @@ const Sefaz = (function () {
   /**
    * Baixa a página da nota e devolve o texto, ou lança erro com o motivo.
    */
+  /**
+   * Proteção: se um portal travou ou recusou, ele fica "em pausa" por algumas
+   * horas e o bot nem tenta (uma espera longa trava a fila do Telegram).
+   * Antes de tentar, marca a pausa; só tira se a tentativa terminar bem.
+   */
+  const PAUSA_SEG = 6 * 3600;
+  function chavePausa_(url) {
+    const m = String(url).match(/^https?:\/\/([^\/:?]+)/i);
+    return 'sefaz_pausa_' + (m ? m[1] : 'x');
+  }
+  function emPausa(url) {
+    return !!CacheService.getScriptCache().get(chavePausa_(url));
+  }
+  function liberar(url) {
+    CacheService.getScriptCache().remove(chavePausa_(url));
+  }
+
   function buscarTexto(url) {
     // O Apps Script recusa "|" sem codificar na URL
     url = String(url).replace(/\|/g, '%7C');
+    if (emPausa(url)) throw new Error('portal da SEFAZ em pausa depois de falhar há pouco');
+    // Se esta execução travar e for cortada, a pausa fica valendo
+    const cache = CacheService.getScriptCache();
+    cache.put(chavePausa_(url), '1', PAUSA_SEG);
     let r = null;
     const logs = [];
     const inicio = Date.now();
@@ -241,6 +262,8 @@ const Sefaz = (function () {
       if (r.resp && r.status === 200) break;
     }
     console.log('SEFAZ: ' + logs.join(' || '));
+    // Respondeu (mesmo com erro HTTP): o portal está vivo, tira a pausa
+    if (r && r.resp) cache.remove(chavePausa_(url));
     if (!r.resp) {
       const ultimo = logs.join(' ');
       if (/desisti por tempo|timeout|tempo limite|timed out/i.test(ultimo)) throw new Error('o portal da SEFAZ não respondeu a tempo');
@@ -301,6 +324,8 @@ const Sefaz = (function () {
     htmlParaTexto: htmlParaTexto,
     xmlParaTexto: xmlParaTexto,
     buscarTexto: buscarTexto,
-    diagnosticar: diagnosticar
+    diagnosticar: diagnosticar,
+    emPausa: emPausa,
+    liberar: liberar
   };
 })();

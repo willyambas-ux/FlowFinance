@@ -171,5 +171,7 @@ function removerWebhook() {
 
 /** Testa se o Google consegue abrir os portais da NFC-e (RN e PE). Veja o resultado no registro de execução. */
 function testarSefaz() {
+  // O teste manual também tira a pausa dos portais
+  ['https://nfce.sefaz.rn.gov.br/', 'https://nfce.set.rn.gov.br/', 'https://nfce.sefaz.pe.gov.br/'].forEach(u => Sefaz.liberar(u));
   console.log(Sefaz.diagnosticar(['24', '26']));
 }
