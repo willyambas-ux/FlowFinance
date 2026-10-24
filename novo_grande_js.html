@@ -293,50 +293,237 @@ function telaMovG() {
   let h = cabecalhoGrande('Lançamentos', m, 'mov', '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="novo">Novo lançamento</button>');
   if (S.erro_movimentos && !S.lista) return h + falhaTela(S.erro_movimentos);
   if (!S.lista) return h + '<div class="g-grade-4">' + esqueleto([70, 70, 70, 70]) + '</div>' + esqueleto([46, 420]);
-  const todos = S.lista;
-  let ent = 0, sai = 0, apagar = 0;
-  todos.forEach(l => {
-    if (l.transferencia) return;
-    if (l.valor > 0) ent += l.valor; else sai += -l.valor;
-    if ((l.status === 'pendente' || l.status === 'agendado') && l.valor < 0) apagar += -l.valor;
-  });
-  h += '<div class="g-grade-4 g-totais">' +
-    '<div class="g-tot"><span>Entradas</span><b class="positivo">+' + numBR(ent) + '</b></div>' +
-    '<div class="g-tot"><span>Saídas</span><b>−' + numBR(sai) + '</b></div>' +
-    '<div class="g-tot"><span>Ainda a pagar</span><b class="g-alerta">−' + numBR(apagar) + '</b></div>' +
-    '<div class="g-tot"><span>Resultado</span><b class="' + (ent - sai >= 0 ? 'positivo' : '') + '">' + (ent - sai >= 0 ? '+' : '−') + numBR(ent - sai) + '</b></div></div>';
-
-  // Filtros
-  const contasUsadas = {}, catsUsadas = {}, quemUsados = {};
-  todos.forEach(l => {
-    if (l.cartao) contasUsadas['k:' + l.cartao] = nomePagamento(l); else if (l.conta) contasUsadas['c:' + l.conta] = nomePagamento(l);
-    const c = acharCategoria(l.categoria); const pai = c && c.pai ? acharCategoria(c.pai) : c;
-    if (pai) catsUsadas[pai.id] = pai.nome;
-    if (l.quem) quemUsados[l.quem] = true;
-  });
-  const opcoes = (obj, sel, vazio) => '<option value="">' + esc(vazio) + '</option>' + Object.keys(obj).sort((a, b) => String(obj[a]).localeCompare(String(obj[b]), 'pt-BR'))
-    .map(k => '<option value="' + esc(k) + '"' + (sel === k ? ' selected' : '') + '>' + esc(obj[k] === true ? k : obj[k]) + '</option>').join('');
-  h += '<div class="g-filtros"><div class="busca g-busca">' + ICONE.busca + '<label for="busca" class="sr">Buscar</label>' +
+  h += '<div id="mov-totais">' + totaisMovG() + '</div>';
+  h += '<div class="g-filtros"><div class="busca g-busca' + (S.busca ? ' ativo' : '') + '">' + ICONE.busca + '<label for="busca" class="sr">Buscar</label>' +
     '<input id="busca" type="search" placeholder="Buscar descrição, categoria, conta ou valor" value="' + esc(S.busca) + '"></div>' +
-    FILTROS.map(f => '<button type="button" class="filtro" data-filtro="' + f.id + '" aria-pressed="' + (S.filtro === f.id) + '">' + esc(f.nome) +
-      (f.id !== 'tudo' ? ' · ' + todos.filter(f.f).length : '') + '</button>').join('') +
-    '<label class="sr" for="f-conta-g">Conta ou cartão</label><select id="f-conta-g" class="g-select">' + opcoes(contasUsadas, S.fConta, 'Todas as contas') + '</select>' +
-    '<label class="sr" for="f-cat-g">Categoria</label><select id="f-cat-g" class="g-select">' + opcoes(catsUsadas, S.fCat, 'Todas as categorias') + '</select>' +
-    (Object.keys(quemUsados).length > 1 ? '<label class="sr" for="f-quem-g">Quem</label><select id="f-quem-g" class="g-select">' + opcoes(quemUsados, S.fQuem, 'Todas as pessoas') + '</select>' : '') +
-    '</div>';
+    '<span id="mov-chips" class="g-filtros-grupo">' + chipsMovG() + '</span>' +
+    '<span id="mov-picks" class="g-filtros-grupo">' + picksMovG() + '</span></div>';
   h += '<div id="mov-corpo">' + corpoMovG() + '</div>';
   return h;
 }
 
-function filtrarMovG() {
-  const filtro = FILTROS.find(f => f.id === S.filtro) || FILTROS[0];
+/* ---------- Filtros de Lançamentos: contas, categorias e pessoas (várias de cada) ---------- */
+
+// Cor de cada instituição pela sigla no fim do nome ("01 cc IT" → IT)
+const CORES_BANCO = { IT: '#EC7000', BB: '#F5C400', CX: '#0070AF', XP: '#16191F', NU: '#820AD1', PX: '#00A859', BT: '#0B2B5C', CL: '#00A3A3' };
+const TEXTO_CLARO_BANCO = { BB: true };
+function siglaPagamento(nome) { const p = String(nome || '').trim().split(/\s+/); return (p[p.length - 1] || '').toUpperCase(); }
+function chavePagamento(l) { return l.cartao ? 'k:' + l.cartao : (l.conta ? 'c:' + l.conta : ''); }
+function infoPagamento(k) {
+  const id = k.slice(2);
+  const o = k.indexOf('k:') === 0 ? acharCartao(id) : acharConta(id);
+  const nome = o ? o.nome : (k.indexOf('k:') === 0 ? 'Cartão' : 'Conta');
+  const sig = siglaPagamento(nome);
+  return { k: k, nome: nome, logo: o && o.icone_url ? o.icone_url : '', cor: CORES_BANCO[sig] || '', claro: !!TEXTO_CLARO_BANCO[sig], cartao: k.indexOf('k:') === 0 };
+}
+function marcaPagamento(info, tam) {
+  tam = tam || 16;
+  // Logo da instituição sobre a cor dela; se o logo não carregar, fica a cor
+  const fundo = info.cor || 'var(--linha)';
+  if (info.logo) return '<span class="g-logo" style="background:' + fundo + ';width:' + tam + 'px;height:' + tam + 'px"><img src="' + esc(info.logo) + '" alt="" loading="lazy" onerror="this.remove()"></span>';
+  return '<span class="g-logo g-logo-cor" style="background:' + fundo + '"></span>';
+}
+function casaCategoria(l, sel) {
+  if (!sel.length) return true;
+  const c = acharCategoria(l.categoria);
+  if (!c) return sel.indexOf('_sem') !== -1;
+  return sel.indexOf(c.id) !== -1 || (c.pai && sel.indexOf(c.pai) !== -1);
+}
+/** Filtros de conta, categoria, pessoa e busca (sem o filtro de situação). */
+function filtrarBaseMovG() {
   const q = IA_norm(S.busca);
-  return S.lista.filter(filtro.f).filter(l => {
-    if (S.fConta) { const k = l.cartao ? 'k:' + l.cartao : 'c:' + l.conta; if (k !== S.fConta) return false; }
-    if (S.fCat) { const c = acharCategoria(l.categoria); const pai = c && c.pai ? c.pai : (c ? c.id : ''); if (pai !== S.fCat) return false; }
-    if (S.fQuem && l.quem !== S.fQuem) return false;
+  const contas = S.fContas || [], cats = S.fCats || [], quems = S.fQuems || [];
+  return S.lista.filter(l => {
+    if (contas.length && contas.indexOf(chavePagamento(l)) === -1) return false;
+    if (!casaCategoria(l, cats)) return false;
+    if (quems.length && quems.indexOf(l.quem || '_ninguem') === -1) return false;
     if (!q) return true;
     return IA_norm([l.descricao, nomeCategoria(l.categoria), nomePagamento(l), numBR(l.valor), l.quem].join(' ')).indexOf(q) !== -1;
+  });
+}
+function filtrarMovG() {
+  const filtro = FILTROS.find(f => f.id === S.filtro) || FILTROS[0];
+  return filtrarBaseMovG().filter(filtro.f);
+}
+function temFiltroMov() { return !!(S.busca || (S.fContas || []).length || (S.fCats || []).length || (S.fQuems || []).length || S.filtro !== 'tudo'); }
+
+/** Cartões do topo: seguem todos os filtros aplicados. */
+function totaisMovG() {
+  const itens = filtrarMovG();
+  let ent = 0, sai = 0, apagar = 0;
+  itens.forEach(l => {
+    if (l.transferencia) return;
+    if (l.valor > 0) ent += l.valor; else sai += -l.valor;
+    if ((l.status === 'pendente' || l.status === 'agendado') && l.valor < 0) apagar += -l.valor;
+  });
+  const filtrado = temFiltroMov();
+  return '<div class="g-grade-4 g-totais' + (filtrado ? ' g-totais-filtrado' : '') + '">' +
+    '<div class="g-tot"><span>Entradas</span><b class="positivo">+' + numBR(ent) + '</b></div>' +
+    '<div class="g-tot"><span>Saídas</span><b>−' + numBR(sai) + '</b></div>' +
+    '<div class="g-tot"><span>Ainda a pagar</span><b class="g-alerta">−' + numBR(apagar) + '</b></div>' +
+    '<div class="g-tot"><span>Resultado</span><b class="' + (ent - sai >= 0 ? 'positivo' : '') + '">' + (ent - sai >= 0 ? '+' : '−') + numBR(ent - sai) + '</b></div></div>' +
+    (filtrado ? '<p class="g-filtro-aviso">Totais só dos lançamentos filtrados (' + itens.length + ' de ' + S.lista.length + '). <button type="button" class="link-btn" data-acao="limpar-filtros">Limpar filtros</button></p>' : '');
+}
+function chipsMovG() {
+  const base = filtrarBaseMovG();
+  return FILTROS.map(f => '<button type="button" class="filtro" data-filtro-g="' + f.id + '" aria-pressed="' + (S.filtro === f.id) + '">' + esc(f.nome) +
+    (f.id !== 'tudo' ? ' · ' + base.filter(f.f).length : '') + '</button>').join('');
+}
+
+function opcoesPicker(qual) {
+  if (qual === 'conta') {
+    const vistos = {};
+    S.lista.forEach(l => { const k = chavePagamento(l); if (k) vistos[k] = (vistos[k] || 0) + 1; });
+    (S.fContas || []).forEach(k => { if (!vistos[k]) vistos[k] = 0; });
+    return Object.keys(vistos).map(k => Object.assign(infoPagamento(k), { qtd: vistos[k] }))
+      .sort((a, b) => (a.cartao - b.cartao) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+  if (qual === 'cat') {
+    const qtd = {}; let sem = 0;
+    S.lista.forEach(l => {
+      const c = acharCategoria(l.categoria);
+      if (!c) { if (!l.transferencia) sem++; return; }
+      qtd[c.id] = (qtd[c.id] || 0) + 1;
+      if (c.pai) qtd[c.pai] = (qtd[c.pai] || 0) + 1;
+    });
+    const out = [];
+    const pais = Object.keys(qtd).map(acharCategoria).filter(c => c && !c.pai).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    pais.forEach(p => {
+      out.push({ k: p.id, nome: p.nome, qtd: qtd[p.id], nivel: 0 });
+      Object.keys(qtd).map(acharCategoria).filter(c => c && c.pai === p.id).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+        .forEach(f => out.push({ k: f.id, nome: f.nome, qtd: qtd[f.id], nivel: 1, pai: p.nome }));
+    });
+    if (sem) out.push({ k: '_sem', nome: 'Sem categoria', qtd: sem, nivel: 0 });
+    return out;
+  }
+  const q = {};
+  S.lista.forEach(l => { const k = l.quem || '_ninguem'; q[k] = (q[k] || 0) + 1; });
+  return Object.keys(q).sort().map(k => ({ k: k, nome: k === '_ninguem' ? 'Sem pessoa (fixas, extrato)' : k, qtd: q[k] }));
+}
+const PICKERS = {
+  conta: { estado: 'fContas', vazio: 'Todas as contas', plural: 'contas', busca: 'Buscar conta ou cartão' },
+  cat: { estado: 'fCats', vazio: 'Todas as categorias', plural: 'categorias', busca: 'Digite para filtrar categorias' },
+  quem: { estado: 'fQuems', vazio: 'Todas as pessoas', plural: 'pessoas', busca: 'Buscar pessoa' }
+};
+function botaoPicker(qual) {
+  const cfg = PICKERS[qual];
+  const sel = S[cfg.estado] || [];
+  const ops = opcoesPicker(qual);
+  let rotulo = cfg.vazio, marca = '', estilo = '';
+  if (sel.length === 1) {
+    const o = ops.find(x => x.k === sel[0]);
+    rotulo = o ? o.nome : '1 selecionada';
+    if (qual === 'conta' && o) {
+      marca = marcaPagamento(o, 18);
+      if (o.cor) estilo = ' style="--cor-filtro:' + o.cor + ';--cor-filtro-texto:' + (o.claro ? '#14181F' : '#fff') + '"';
+    }
+  } else if (sel.length > 1) {
+    rotulo = sel.length + ' ' + cfg.plural;
+    if (qual === 'conta') marca = '<span class="g-pick-logos">' + sel.slice(0, 3).map(k => marcaPagamento(infoPagamento(k), 16)).join('') + '</span>';
+  }
+  return '<button type="button" class="g-pick' + (sel.length ? ' ativo' : '') + '" data-pick="' + qual + '" aria-haspopup="listbox" aria-expanded="false"' + estilo + '>' +
+    marca + '<span class="g-pick-rot">' + esc(rotulo) + '</span>' +
+    (sel.length ? '<span class="g-pick-x" data-pick-limpar="' + qual + '" role="button" aria-label="Limpar filtro">×</span>' : '<span class="g-pick-seta" aria-hidden="true">▾</span>') + '</button>';
+}
+function picksMovG() {
+  const temPessoas = opcoesPicker('quem').length > 1;
+  return botaoPicker('conta') + botaoPicker('cat') + (temPessoas ? botaoPicker('quem') : '');
+}
+function listaPicker(qual, termo) {
+  const cfg = PICKERS[qual];
+  const sel = S[cfg.estado] || [];
+  const t = IA_norm(termo || '');
+  const ops = opcoesPicker(qual).filter(o => !t || IA_norm(o.nome + ' ' + (o.pai || '')).indexOf(t) !== -1);
+  if (!ops.length) return '<p class="g-pop-vazio">Nada encontrado.</p>';
+  let grupo = '';
+  return ops.map(o => {
+    let cab = '';
+    if (qual === 'conta') { const g = o.cartao ? 'Cartões' : 'Contas'; if (g !== grupo) { grupo = g; cab = '<div class="g-pop-grupo">' + g + '</div>'; } }
+    return cab + '<label class="g-pop-item' + (o.nivel ? ' sub' : '') + '"><input type="checkbox" value="' + esc(o.k) + '"' + (sel.indexOf(o.k) !== -1 ? ' checked' : '') + '>' +
+      (qual === 'conta' ? marcaPagamento(o, 18) : '') + '<span class="g-pop-nome">' + esc(o.nome) + '</span><span class="g-pop-qtd">' + o.qtd + '</span></label>';
+  }).join('');
+}
+function fecharPicker() {
+  const pop = document.getElementById('g-pop');
+  if (pop) pop.remove();
+  document.querySelectorAll('[data-pick][aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  document.removeEventListener('mousedown', foraPicker_, true);
+}
+function foraPicker_(e) {
+  const pop = document.getElementById('g-pop');
+  if (pop && !pop.contains(e.target) && !e.target.closest('[data-pick]')) fecharPicker();
+}
+function abrirPicker(qual, botao, tela) {
+  const jaAberto = document.getElementById('g-pop');
+  const mesmo = jaAberto && jaAberto.dataset.qual === qual;
+  fecharPicker();
+  if (mesmo) return;
+  const cfg = PICKERS[qual];
+  const pop = document.createElement('div');
+  pop.id = 'g-pop'; pop.className = 'g-pop'; pop.dataset.qual = qual;
+  pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', cfg.vazio);
+  pop.innerHTML = '<div class="g-pop-busca">' + ICONE.busca + '<input type="search" placeholder="' + esc(cfg.busca) + '" aria-label="' + esc(cfg.busca) + '"></div>' +
+    '<div class="g-pop-lista" role="listbox" aria-multiselectable="true">' + listaPicker(qual, '') + '</div>' +
+    '<div class="g-pop-rodape"><button type="button" class="link-btn" data-pop="limpar">Limpar</button><button type="button" class="btn btn-primario btn-pequeno" data-pop="ok">Pronto</button></div>';
+  document.body.appendChild(pop);
+  const r = botao.getBoundingClientRect();
+  const larg = 300;
+  pop.style.top = (window.scrollY + r.bottom + 6) + 'px';
+  pop.style.left = Math.max(12, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - larg - 12)) + 'px';
+  botao.setAttribute('aria-expanded', 'true');
+  const busca = pop.querySelector('input[type="search"]');
+  const lista = pop.querySelector('.g-pop-lista');
+  const ligarLista = function () {
+    lista.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.onchange = function () {
+        const atual = (S[cfg.estado] || []).slice();
+        const i = atual.indexOf(cb.value);
+        if (cb.checked && i === -1) atual.push(cb.value);
+        if (!cb.checked && i !== -1) atual.splice(i, 1);
+        S[cfg.estado] = atual; S.sel = new Set();
+        atualizarMov(tela);
+      };
+    });
+  };
+  ligarLista();
+  busca.oninput = function () { lista.innerHTML = listaPicker(qual, busca.value); ligarLista(); };
+  busca.onkeydown = function (e) {
+    if (e.key === 'Escape') { fecharPicker(); botao.focus(); }
+    if (e.key === 'Enter') { e.preventDefault(); const cb = lista.querySelector('input[type="checkbox"]'); if (cb) { cb.checked = !cb.checked; cb.onchange(); } }
+  };
+  pop.querySelector('[data-pop="limpar"]').onclick = function () { S[cfg.estado] = []; S.sel = new Set(); lista.innerHTML = listaPicker(qual, busca.value); ligarLista(); atualizarMov(tela); };
+  pop.querySelector('[data-pop="ok"]').onclick = function () { fecharPicker(); };
+  setTimeout(function () { busca.focus(); document.addEventListener('mousedown', foraPicker_, true); }, 0);
+}
+
+/** Atualiza totais, contadores, filtros e tabela sem redesenhar a busca (mantém o foco). */
+function atualizarMov(tela) {
+  const t = tela.querySelector('#mov-totais'); if (t) t.innerHTML = totaisMovG();
+  const c = tela.querySelector('#mov-chips'); if (c) c.innerHTML = chipsMovG();
+  const p = tela.querySelector('#mov-picks'); if (p) p.innerHTML = picksMovG();
+  const b = tela.querySelector('.g-busca'); if (b) b.classList.toggle('ativo', !!S.busca);
+  const pop = document.getElementById('g-pop');
+  if (pop) { const bt = tela.querySelector('[data-pick="' + pop.dataset.qual + '"]'); if (bt) bt.setAttribute('aria-expanded', 'true'); }
+  ligarFiltrosMov(tela);
+  const corpo = tela.querySelector('#mov-corpo');
+  if (corpo) corpo.innerHTML = corpoMovG();
+  ligarTelaGrandeTabela(tela);
+}
+function ligarFiltrosMov(tela) {
+  tela.querySelectorAll('[data-filtro-g]').forEach(bt => { bt.onclick = function () { S.filtro = bt.dataset.filtroG; S.sel = new Set(); atualizarMov(tela); }; });
+  tela.querySelectorAll('[data-pick]').forEach(bt => {
+    bt.onclick = function (e) {
+      const x = e.target.closest('[data-pick-limpar]');
+      if (x) { e.stopPropagation(); S[PICKERS[x.dataset.pickLimpar].estado] = []; S.sel = new Set(); fecharPicker(); atualizarMov(tela); return; }
+      abrirPicker(bt.dataset.pick, bt, tela);
+    };
+  });
+  tela.querySelectorAll('[data-acao="limpar-filtros"]').forEach(bt => {
+    bt.onclick = function () {
+      S.filtro = 'tudo'; S.busca = ''; S.fContas = []; S.fCats = []; S.fQuems = []; S.sel = new Set();
+      const bi = tela.querySelector('#busca'); if (bi) bi.value = '';
+      fecharPicker(); atualizarMov(tela);
+    };
   });
 }
 
@@ -349,9 +536,16 @@ function corpoMovG() {
   itens.forEach(l => { soma += l.valor; });
   let ultimoDia = '';
   // Com uma conta filtrada, o saldo é só dela (bate com o extrato); com cartão, não há saldo de caixa
-  const contaFiltro = S.fConta && S.fConta.indexOf('c:') === 0 ? S.fConta.slice(2) : '';
-  const saldosUsar = contaFiltro ? (S.saldosConta || {})[contaFiltro] : (S.fConta ? null : S.saldosDia);
-  const rotuloSaldo = contaFiltro ? 'Saldo da conta' : 'Saldo contas';
+  // Saldo: das contas filtradas (somadas, se forem várias); com cartão no filtro não há saldo de caixa
+  const fc = S.fContas || [];
+  const soContas = fc.length && fc.every(k => k.indexOf('c:') === 0);
+  let saldosUsar = fc.length ? null : S.saldosDia;
+  if (soContas) {
+    saldosUsar = {};
+    fc.forEach(k => { const s = (S.saldosConta || {})[k.slice(2)] || {}; Object.keys(s).forEach(d => { saldosUsar[d] = Math.round(((saldosUsar[d] || 0) + s[d]) * 100) / 100; }); });
+  }
+  const contaFiltro = soContas;
+  const rotuloSaldo = soContas ? (fc.length === 1 ? 'Saldo da conta' : 'Saldo das contas') : 'Saldo contas';
   const linhas = itens.map(l => {
     const c = acharCategoria(l.categoria);
     const catTxt = l.transferencia ? 'Transferência' : (c ? c.caminho : '');
@@ -375,12 +569,12 @@ function corpoMovG() {
     '<th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta ou cartão</th><th>Quem</th><th>Situação</th><th class="num">Valor</th><th class="num">' + rotuloSaldo + '</th></tr></thead><tbody>' +
     linhas + '</tbody><tfoot><tr><td></td><td colspan="6" class="g-suave">' + itens.length + (itens.length === 1 ? ' lançamento' : ' lançamentos') + '</td>' +
     '<td class="num"><b>' + sinal(soma) + '</b></td><td></td></tr></tfoot></table></div>' +
-    '<p class="nota" style="margin:10px 0 0">' + (contaFiltro ? 'Saldo desta conta no fim de cada dia, incluindo o previsto. Deve bater com o extrato do banco.' : S.fConta ? 'Compras no cartão entram no saldo da conta quando a fatura é paga.' : 'Saldo de todas as contas somadas no fim de cada dia, incluindo o previsto. Filtre uma conta para ver o saldo só dela.') + '</p>';
+    '<p class="nota" style="margin:10px 0 0">' + (contaFiltro ? (fc.length === 1 ? 'Saldo desta conta no fim de cada dia, incluindo o previsto. Deve bater com o extrato do banco.' : 'Saldo das contas selecionadas, somadas, no fim de cada dia.') : fc.length ? 'Compras no cartão entram no saldo da conta quando a fatura é paga.' : 'Saldo de todas as contas somadas no fim de cada dia, incluindo o previsto. Filtre uma conta para ver o saldo só dela.') + '</p>';
 }
 
 /** Barra que aparece quando há linhas selecionadas. */
 function barraLote(onde, itens) {
-  if (!S.sel.size) return '<div class="g-lote vazio-lote">Selecione linhas para ' + (onde === 'revisar' ? 'confirmar ou trocar a categoria de várias de uma vez.' : 'mudar categoria ou situação, ou excluir de uma vez.') + '</div>';
+  if (!S.sel.size) return '';
   const sel = itens.filter(i => S.sel.has(i.id));
   const total = sel.reduce((t, i) => t + i.valor, 0);
   const cats = '<option value="">' + (onde === 'revisar' ? 'Manter a de cada um' : 'Categoria…') + '</option>' +
@@ -510,13 +704,11 @@ function ligarTelaGrande(tela) {
     tr.onclick = abrir;
     tr.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
   });
-  [['#f-conta-g', 'fConta'], ['#f-cat-g', 'fCat'], ['#f-quem-g', 'fQuem']].forEach(par => {
-    const el = tela.querySelector(par[0]);
-    if (el) el.onchange = function () { S[par[1]] = el.value; S.sel = new Set(); redesenharTabela(tela); };
-  });
   if (S.aba === 'movimentos') {
+    fecharPicker();
+    ligarFiltrosMov(tela);
     const busca = tela.querySelector('#busca');
-    if (busca) busca.oninput = function () { S.busca = busca.value; S.sel = new Set(); redesenharTabela(tela); };
+    if (busca) busca.oninput = function () { S.busca = busca.value; S.sel = new Set(); atualizarMov(tela); };
   }
   if (typeof ligarTelaG2 === 'function') ligarTelaG2(tela);
 }
@@ -554,8 +746,8 @@ function ligarTelaGrandeTabela(tela) {
 function irParaMovimentos(o) {
   S.filtro = o.filtro || 'tudo';
   S.busca = o.busca || '';
-  S.fCat = o.fCat || '';
-  S.fConta = ''; S.fQuem = '';
+  S.fCats = o.fCat ? [o.fCat] : [];
+  S.fContas = o.fContas || []; S.fQuems = [];
   S.sel = new Set();
   if (o.mes && (!S.listaMes || S.listaMes.ano !== o.mes.ano || S.listaMes.mes !== o.mes.mes)) { S.listaMes = o.mes; S.lista = null; }
   mostrarAba('movimentos');
