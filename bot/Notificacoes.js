@@ -14,6 +14,8 @@ const Notificacoes = (function () {
   const EH_GASTO = /compra.{0,40}aprovad|aprovad.{0,25}compra|voce enviou um pix|pix (enviado|realizado|efetuado)|transferencia (enviada|realizada|efetuada)|pagamento (aprovado|realizado|efetuado)/;
   const EH_CARTEIRA = /carteira|wallet/;
   const EH_RECEBIDO = /voce recebeu|pix recebido|recebeu um pix|transferencia recebida/;
+  // Compra que não aconteceu: não vira lançamento
+  const EH_RECUSADA = /recusad|negad|nao aprovad|nao autorizad|cancelad|bloquead|saldo insuficiente/;
 
   // Palavra no app/texto -> sigla usada no fim do nome da conta ou do cartão
   const BANCOS = [
@@ -21,7 +23,8 @@ const Notificacoes = (function () {
     { re: /itau|\biti\b|iti_/, sigla: 'IT' },
     { re: /banco do brasil|\bbb\b|ourocard/, sigla: 'BB' },
     { re: /caixa/, sigla: 'CX' },
-    { re: /pluxee|sodexo/, sigla: 'PX' }
+    { re: /pluxee|sodexo/, sigla: 'PX' },
+    { re: /nubank|\bnu\b/, sigla: 'NU' }
   ];
 
   function norm_(s) {
@@ -66,6 +69,7 @@ const Notificacoes = (function () {
     const valor = valor_(texto) || valor_(titulo);
     if (!valor) return null;
 
+    if (EH_RECUSADA.test(n)) return null;
     const ex = { valor: valor, local: '', data: Formato.hoje(), meio: 'cartao', direcao: 'saida', generico: false, base: n + ' ' + nApp };
 
     if (EH_RECEBIDO.test(n)) {
@@ -86,8 +90,9 @@ const Notificacoes = (function () {
       return null;
     } else {
       let m;
-      if ((m = sem.match(/enviou um pix para (.+?)(?:\s+\d{11,14})?\s+no valor/i))) {
-        ex.local = limparLocal_(m[1]);
+      if ((m = sem.match(/enviou um pix para (.+?)(?:\s+\d{11,14})?\s+no valor/i)) ||
+          (m = sem.match(/enviou R\$\s?[\d.,]+ (?:via pix )?para (.+?)(?:,| CPF| CNPJ|\.|$)/i))) {
+        ex.local = 'Pix para ' + limparLocal_(m[1]);
         ex.meio = 'conta';
       } else if ((m = sem.match(/aprovada de R\$\s?[\d.,]+ em (.+?) no dia (\d{2})\/(\d{2})/i))) {
         ex.local = limparLocal_(m[1]);
@@ -99,6 +104,8 @@ const Notificacoes = (function () {
       }
       if (/pix|transferencia/.test(n) && !/compra/.test(n)) ex.meio = 'conta';
     }
+    // Cartão de débito tira direto da conta
+    if (/\bdebito\b/.test(n)) ex.meio = 'conta';
 
     if (!ex.local || /^dl$/i.test(ex.local)) {
       ex.generico = true;
@@ -147,7 +154,7 @@ const Notificacoes = (function () {
 
   /** A pessoa do Pix é o próprio usuário? Compara o primeiro nome (e NOMES_PROPRIOS, se houver). */
   function ehProprio_(quem, pessoa) {
-    const alvo = norm_(pessoa);
+    const alvo = norm_(pessoa).replace(/^pix para /, '');
     if (!alvo) return false;
     const nomes = [quem];
     try { (JSON.parse(Config.get('NOMES_PROPRIOS', '[]')) || []).forEach(n => nomes.push(n)); } catch (e) { /* ignora */ }

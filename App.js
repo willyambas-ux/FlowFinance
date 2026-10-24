@@ -87,9 +87,9 @@ function appBoot() {
 
   const contas = listContas()
     .filter(c => appAtivo_(c.ativo))
-    .map(c => ({ id: String(c.id), nome: String(c.nome), tipo: String(c.tipo || 'corrente') }));
+    .map(c => ({ id: String(c.id), nome: String(c.nome), tipo: String(c.tipo || 'corrente'), icone_url: String(c.icone_url || '') }));
   const cartoes = appCartoesAtivos_().map(c => ({
-    id: String(c.id), nome: String(c.nome),
+    id: String(c.id), nome: String(c.nome), icone_url: String(c.icone_url || ''),
     conta_pagamento: String(c.conta_pagamento || ''),
     dia_fechamento: Number(c.dia_fechamento) || 0,
     dia_vencimento: Number(c.dia_vencimento) || 0
