@@ -1,0 +1,200 @@
+<script>
+/* ============================================================================
+ * Caixas de seleção no visual do sistema (tela grande).
+ * Troca cada <select> por um botão com lista própria: busca digitando, grupos
+ * (categoria principal › subcategorias) e teclado. O <select> continua no DOM,
+ * escondido, e recebe o valor e o evento "change" — o resto do código não muda.
+ * ========================================================================== */
+(function () {
+  const MIN_BUSCA = 6; // a partir de quantas opções aparece a busca
+
+  function textoSel(sel) {
+    const o = sel.options[sel.selectedIndex];
+    return o ? o.textContent.trim() : '';
+  }
+  function opcoes(sel) {
+    const out = [];
+    Array.prototype.forEach.call(sel.children, function (el) {
+      if (el.tagName === 'OPTGROUP') {
+        out.push({ grupo: el.label });
+        Array.prototype.forEach.call(el.children, function (o) {
+          out.push({ v: o.value, t: o.textContent.trim(), g: el.label, sub: true, dis: o.disabled });
+        });
+      } else if (el.tagName === 'OPTION') {
+        out.push({ v: el.value, t: el.textContent.trim(), dis: el.disabled });
+      }
+    });
+    return out;
+  }
+  function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+
+  function atualizarBotao(sel) {
+    const bt = sel._gsel;
+    if (!bt) return;
+    const t = textoSel(sel);
+    const vazio = !sel.value;
+    bt.querySelector('.g-sel-txt').textContent = t || 'Escolher…';
+    bt.classList.toggle('g-sel-vazio', vazio);
+    bt.disabled = sel.disabled;
+  }
+
+  function fechar() {
+    const pop = document.getElementById('g-sel-pop');
+    if (pop) {
+      const sel = pop._sel;
+      pop.remove();
+      if (sel && sel._gsel) sel._gsel.setAttribute('aria-expanded', 'false');
+    }
+    document.removeEventListener('mousedown', fora, true);
+    window.removeEventListener('resize', fechar);
+    document.removeEventListener('scroll', aoRolar, true);
+  }
+  function fora(e) {
+    const pop = document.getElementById('g-sel-pop');
+    if (pop && !pop.contains(e.target) && !(pop._sel && pop._sel._gsel.contains(e.target))) fechar();
+  }
+  function aoRolar(e) {
+    const pop = document.getElementById('g-sel-pop');
+    if (pop && !pop.contains(e.target)) fechar();
+  }
+
+  function abrir(sel) {
+    const ja = document.getElementById('g-sel-pop');
+    if (ja && ja._sel === sel) { fechar(); return; }
+    fechar();
+    const ops = opcoes(sel);
+    const nItens = ops.filter(o => !o.grupo).length;
+    const pop = document.createElement('div');
+    pop.id = 'g-sel-pop';
+    pop.className = 'g-pop g-sel-pop';
+    pop._sel = sel;
+    const comBusca = nItens >= MIN_BUSCA;
+    pop.innerHTML = (comBusca ? '<div class="g-pop-busca">' + (typeof ICONE !== 'undefined' ? ICONE.busca : '') +
+      '<input type="search" placeholder="Digite para filtrar" aria-label="Filtrar opções"></div>' : '') +
+      '<div class="g-pop-lista" role="listbox"></div>';
+    document.body.appendChild(pop);
+    const lista = pop.querySelector('.g-pop-lista');
+    const busca = pop.querySelector('input');
+    let ativo = -1;
+
+    function desenhar(termo) {
+      const t = norm(termo);
+      const vis = ops.filter(o => o.grupo ? true : (!t || norm(o.t + ' ' + (o.g || '')).indexOf(t) !== -1));
+      // tira grupos sem itens visíveis
+      const final = vis.filter((o, i) => !o.grupo || (vis[i + 1] && !vis[i + 1].grupo && vis[i + 1].g === o.grupo));
+      if (!final.some(o => !o.grupo)) { lista.innerHTML = '<p class="g-pop-vazio">Nada encontrado.</p>'; return; }
+      lista.innerHTML = final.map(o => o.grupo
+        ? '<div class="g-pop-grupo">' + escHtml(o.grupo) + '</div>'
+        : '<button type="button" role="option" class="g-sel-op' + (o.sub ? ' sub' : '') + (o.v === sel.value ? ' atual' : '') + '" data-v="' + escHtml(o.v) + '"' + (o.dis ? ' disabled' : '') +
+          ' aria-selected="' + (o.v === sel.value) + '">' + escHtml(o.t) + '</button>').join('');
+      lista.querySelectorAll('.g-sel-op').forEach(b => {
+        b.onmousedown = function (e) { e.preventDefault(); };
+        b.onclick = function () { escolher(b.dataset.v); };
+      });
+      const itens = lista.querySelectorAll('.g-sel-op:not([disabled])');
+      ativo = Array.prototype.findIndex.call(itens, b => b.classList.contains('atual'));
+      if (t) ativo = itens.length ? 0 : -1;
+      marcar();
+    }
+    function marcar() {
+      const itens = lista.querySelectorAll('.g-sel-op:not([disabled])');
+      itens.forEach((b, i) => b.classList.toggle('foco', i === ativo));
+      if (itens[ativo]) itens[ativo].scrollIntoView({ block: 'nearest' });
+    }
+    function escolher(v) {
+      sel.value = v;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      atualizarBotao(sel);
+      fechar();
+      if (sel._gsel && document.body.contains(sel._gsel)) sel._gsel.focus();
+    }
+    function teclado(e) {
+      const itens = lista.querySelectorAll('.g-sel-op:not([disabled])');
+      if (e.key === 'ArrowDown') { e.preventDefault(); ativo = Math.min(itens.length - 1, ativo + 1); marcar(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); ativo = Math.max(0, ativo - 1); marcar(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (itens[ativo]) escolher(itens[ativo].dataset.v); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fechar(); sel._gsel.focus(); }
+      else if (e.key === 'Tab') { fechar(); }
+    }
+    desenhar('');
+    if (busca) { busca.oninput = function () { desenhar(busca.value); }; busca.onkeydown = teclado; }
+    else { pop.tabIndex = -1; pop.onkeydown = teclado; }
+
+    // Posição: abaixo do botão (ou acima, se não couber), presa à janela
+    const r = sel._gsel.getBoundingClientRect();
+    const larg = Math.max(r.width, 260);
+    pop.style.position = 'fixed';
+    pop.style.width = larg + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - larg - 8)) + 'px';
+    const alt = Math.min(pop.offsetHeight, 380);
+    if (r.bottom + 6 + alt > window.innerHeight && r.top - 6 - alt > 0) pop.style.top = (r.top - 6 - alt) + 'px';
+    else pop.style.top = (r.bottom + 6) + 'px';
+    sel._gsel.setAttribute('aria-expanded', 'true');
+    setTimeout(function () {
+      (busca || pop).focus();
+      document.addEventListener('mousedown', fora, true);
+      window.addEventListener('resize', fechar);
+      document.addEventListener('scroll', aoRolar, true);
+    }, 0);
+  }
+
+  function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+  function melhorar(sel) {
+    if (sel._gsel || sel.multiple || sel.hasAttribute('data-nativo')) return;
+    const bt = document.createElement('button');
+    bt.type = 'button';
+    bt.className = 'g-sel' + (sel.classList.contains('g-select') ? ' g-sel-pilula' : '') + (sel.closest('.g-lote') ? ' g-sel-lote' : '');
+    bt.setAttribute('aria-haspopup', 'listbox');
+    bt.setAttribute('aria-expanded', 'false');
+    if (sel.id) {
+      bt.id = sel.id + '-gsel';
+      const lab = document.querySelector('label[for="' + sel.id + '"]');
+      if (lab) { lab.htmlFor = bt.id; bt.setAttribute('aria-label', lab.textContent.trim()); }
+    }
+    bt.innerHTML = '<span class="g-sel-txt"></span><span class="g-sel-seta" aria-hidden="true"></span>';
+    sel._gsel = bt;
+    sel.classList.add('g-sel-oculto');
+    sel.tabIndex = -1;
+    sel.insertAdjacentElement('afterend', bt);
+    bt.onclick = function () { abrir(sel); };
+    bt.onkeydown = function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(sel); }
+    };
+    sel.addEventListener('change', function () { atualizarBotao(sel); });
+    atualizarBotao(sel);
+    // Mudanças feitas por código (value, opções, disabled)
+    new MutationObserver(function () { atualizarBotao(sel); }).observe(sel, { childList: true, subtree: true, attributes: true });
+  }
+
+  function varrer(raiz) {
+    if (!document.body.classList.contains('grande')) return;
+    (raiz.querySelectorAll ? raiz.querySelectorAll('select') : []).forEach(melhorar);
+  }
+
+  // Valor trocado por código (sel.value = …) também atualiza o botão
+  const desc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  if (desc && desc.set) {
+    Object.defineProperty(HTMLSelectElement.prototype, 'value', {
+      get: function () { return desc.get.call(this); },
+      set: function (v) { desc.set.call(this, v); if (this._gsel) atualizarBotao(this); },
+      configurable: true
+    });
+  }
+
+  new MutationObserver(function (muts) {
+    if (!document.body.classList.contains('grande')) return;
+    muts.forEach(function (m) {
+      m.addedNodes.forEach(function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'SELECT') melhorar(n); else varrer(n);
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+  // Quando a tela vira "grande", melhora o que já está na página
+  new MutationObserver(function () { varrer(document.body); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('DOMContentLoaded', function () { varrer(document.body); });
+  window.FFSelect = { varrer: varrer, fechar: fechar };
+})();
+</script>
