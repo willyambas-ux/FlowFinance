@@ -6,22 +6,22 @@
  * Botões usam callback_data "acao|chave|arg" (limite do Telegram: 64 bytes).
  */
 const Rascunho = (function () {
-  const TTL = 21600; // 6 horas, máximo do CacheService
+  // Rascunhos e atalhos ficam na Guarda (cache + Propriedades, alguns dias):
+  // dá para validar de manhã a compra feita à noite.
   const PRIORIDADE_APRENDIDA = 10; // regra aprendida vale mais que as regras gerais
 
-  function cache_() { return CacheService.getScriptCache(); }
 
   function novaChave_() {
     return Utilities.getUuid().replace(/-/g, '').slice(0, 10);
   }
 
   function salvar(r) {
-    cache_().put('rasc_' + r.chave, JSON.stringify(r), TTL);
+    Guarda.put('rasc_' + r.chave, JSON.stringify(r));
     return r;
   }
 
   function ler(chave) {
-    const raw = cache_().get('rasc_' + chave);
+    const raw = Guarda.get('rasc_' + chave);
     return raw ? JSON.parse(raw) : null;
   }
 
@@ -206,7 +206,7 @@ const Rascunho = (function () {
       r.messageId = resp.result.message_id;
       salvar(r);
       // Para achar o rascunho quando a pessoa responder a ele (ex.: mais uma foto do cupom)
-      cache_().put('msgr_' + r.chatId + '_' + r.messageId, r.chave, TTL);
+      Guarda.put('msgr_' + r.chatId + '_' + r.messageId, r.chave);
     }
   }
 
@@ -293,11 +293,18 @@ const Rascunho = (function () {
   function gravarParaRevisar(r) {
     if (ehTransf_(r) || faltaValor_(r)) return r;
     try {
-      const salvo = FF.saveLancamento(registro_(r, 'revisar'));
-      r.ids = salvo && salvo.id ? [String(salvo.id)] : [];
+      if (r.parcelas > 1) {
+        // Parcelado: todas as parcelas já entram; só a 1ª vai para a fila de revisão
+        const criados = FF.criarParcelamento(registro_(r, 'revisar'), r.parcelas, 1, 'mensal', 1) || [];
+        r.ids = criados.filter(l => l && l.id).map(l => String(l.id));
+        if (r.ids.length > 1) FF.updateLancamentosBatch(r.ids.slice(1), { status: 'agendado' });
+      } else {
+        const salvo = FF.saveLancamento(registro_(r, 'revisar'));
+        r.ids = salvo && salvo.id ? [String(salvo.id)] : [];
+      }
       r.revisar = r.ids.length > 0;
       // Para o cupom achar este rascunho e fechá-lo se juntar com ele
-      if (r.revisar) cache_().put('lancrasc_' + r.ids[0], r.chave, TTL);
+      if (r.revisar) Guarda.put('lancrasc_' + r.ids[0], r.chave);
     } catch (e) {
       console.warn('não consegui gravar para revisar: ' + e);
     }
@@ -321,6 +328,13 @@ const Rascunho = (function () {
       salvar(r);
       Telegram.editar(r.chatId, r.messageId, Telegram.esc(r.descricao) + ' · ' + Formato.brl(r.valor) + '\nJá foi revisado no app.', []);
       return false;
+    }
+    if (r.parcelas > 1) {
+      // Refaz as parcelas com o que foi ajustado no Telegram (cartão, categoria, data)
+      FF.deleteLancamentosBatch(r.ids);
+      const criados = FF.criarParcelamento(registro_(r, status), r.parcelas, 1, 'mensal', 1) || [];
+      r.ids = criados.filter(l => l && l.id).map(l => String(l.id));
+      return r.ids.length > 0;
     }
     const novo = registro_(r, status);
     const mesmaFatura = novo.cartao && String(novo.cartao) === String(atual.cartao);
@@ -352,7 +366,7 @@ const Rascunho = (function () {
     const aprendido = aprender_(r, ctx);
     r.estado = 'salvo';
     salvar(r);
-    cache_().put('ultimo_' + r.usuarioId, r.chave, TTL);
+    Guarda.put('ultimo_' + r.usuarioId, r.chave);
 
     const titulo = r.parcelas > 1 && !ehTransf_(r) ? 'Lançado em ' + r.parcelas + ' parcelas' : 'Lançado';
     let texto = textoResumo_(r, ctx, titulo);
@@ -384,7 +398,7 @@ const Rascunho = (function () {
     gravarItens_(r, atual.id, String(atual.data).slice(0, 10));
 
     // O rascunho da notificação, se ainda aberto no Telegram, fica resolvido
-    const chaveNotif = cache_().get('lancrasc_' + atual.id);
+    const chaveNotif = Guarda.get('lancrasc_' + atual.id);
     const outro = chaveNotif ? ler(chaveNotif) : null;
     if (outro && outro.estado === 'aberto') {
       outro.estado = 'salvo';
@@ -405,7 +419,7 @@ const Rascunho = (function () {
     r.parecido = null;
     r.estado = 'salvo';
     salvar(r);
-    cache_().put('ultimo_' + r.usuarioId, r.chave, TTL);
+    Guarda.put('ultimo_' + r.usuarioId, r.chave);
     let texto = textoResumo_(r, ctx, 'Juntado ao lançamento que já existia');
     if (r.itensGravados) texto += '\n<i>' + r.itensGravados + (r.itensGravados === 1 ? ' item foi' : ' itens foram') + ' para o histórico de preços.</i>';
     Telegram.editar(r.chatId, r.messageId, texto, [[botao_('Desfazer', 'u|' + r.chave)]]);
@@ -452,7 +466,7 @@ const Rascunho = (function () {
     const partes = String(dados || '').split('|');
     const acao = partes[0], chave = partes[1], arg = partes.slice(2).join('|');
     const r = ler(chave);
-    if (!r) return 'Esse lançamento expirou. Mande de novo.';
+    if (!r) return 'Passou de ' + Guarda.DIAS + ' dias. Revise no app, na fila "Para revisar".';
     if (String(r.usuarioId) !== String(usuarioId)) return 'Esse lançamento é de outra pessoa.';
 
     if (acao === 'u') return desfazer(r) ? 'Desfeito' : 'Nada para desfazer';

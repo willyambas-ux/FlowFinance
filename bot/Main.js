@@ -145,7 +145,7 @@ function tratarMensagem_(msg) {
   }
 
   if (cmd === '/desfazer') {
-    const chave = CacheService.getScriptCache().get('ultimo_' + usuarioId);
+    const chave = Guarda.get('ultimo_' + usuarioId);
     const r = chave ? Rascunho.ler(chave) : null;
     if (r && Rascunho.desfazer(r)) Telegram.enviar(chatId, 'Pronto, desfeito.');
     else Telegram.enviar(chatId, 'Não achei um lançamento recente seu para desfazer.');

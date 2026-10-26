@@ -327,7 +327,7 @@ const Cupom = (function () {
     const cache = CacheService.getScriptCache();
     let chave = '';
     if (msg.media_group_id) chave = cache.get('grupo_' + chatId + '_' + msg.media_group_id) || '';
-    if (!chave && msg.reply_to_message) chave = cache.get('msgr_' + chatId + '_' + msg.reply_to_message.message_id) || '';
+    if (!chave && msg.reply_to_message) chave = Guarda.get('msgr_' + chatId + '_' + msg.reply_to_message.message_id) || '';
     const r = chave ? Rascunho.ler(chave) : null;
     return r && r.estado === 'aberto' && r.origem === 'cupom' ? r : null;
   }

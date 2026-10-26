@@ -59,8 +59,30 @@ const Notificacoes = (function () {
   }
 
   /**
+   * Compra parcelada: "em 12x", "12x de R$ 50,90", "em 3 parcelas", "10 vezes".
+   * Devolve { n, porParcela } ou null. porParcela = o valor citado é o de cada parcela.
+   */
+  function parcelas_(n) {
+    let m = n.match(/\b(\d{1,2})\s?x\s+de\s+r\$/);
+    if (m) return { n: Number(m[1]), porParcela: true };
+    m = n.match(/(?:\bem\s+|\b)(\d{1,2})\s?x\b/) || n.match(/\bem\s+(\d{1,2})\s+(?:parcelas|vezes)\b/);
+    if (m) return { n: Number(m[1]), porParcela: false };
+    return null;
+  }
+
+  /** Tira do nome da loja o pedaço das parcelas: "12x em QCONCURSOS" -> "QCONCURSOS". */
+  function semParcelas_(s) {
+    return String(s || '')
+      .replace(/^\s*\d{1,2}\s?x\s+(?:de\s+R\$\s?[\d.,]+\s+)?(?:em\s+)?/i, '')
+      .replace(/\s+(?:em\s+)?\d{1,2}\s?x\s*$/i, '')
+      .replace(/\s+em\s+\d{1,2}\s+(?:parcelas|vezes)\s*$/i, '')
+      .trim();
+  }
+
+  /**
    * Lê uma notificação. Devolve null se não for gasto.
-   * { valor, local, data, meio: 'cartao'|'conta', generico, base }
+   * { valor, local, data, meio: 'cartao'|'conta', generico, base, parcelas }
+   * valor é sempre o total da compra; parcelas = 1 se à vista.
    */
   function extrair(app, titulo, texto) {
     const sem = Formato.semAcento(String(texto || ''));
@@ -70,7 +92,7 @@ const Notificacoes = (function () {
     if (!valor) return null;
 
     if (EH_RECUSADA.test(n)) return null;
-    const ex = { valor: valor, local: '', data: Formato.hoje(), meio: 'cartao', direcao: 'saida', generico: false, base: n + ' ' + nApp };
+    const ex = { valor: valor, local: '', data: Formato.hoje(), meio: 'cartao', direcao: 'saida', generico: false, base: n + ' ' + nApp, parcelas: 1 };
 
     if (EH_RECEBIDO.test(n)) {
       // "Você recebeu R$ 1,00 de WILLYAM, CPF ..." / "Você recebeu um Pix de FULANO no valor de R$ ..."
@@ -106,6 +128,14 @@ const Notificacoes = (function () {
     }
     // Cartão de débito tira direto da conta
     if (/\bdebito\b/.test(n)) ex.meio = 'conta';
+
+    // Parcelado: só no crédito; o valor guardado é o total
+    const par = ex.meio === 'cartao' ? parcelas_(n) : null;
+    if (par && par.n > 1 && par.n <= 48) {
+      ex.parcelas = par.n;
+      if (par.porParcela) ex.valor = Math.round(ex.valor * par.n * 100) / 100;
+    }
+    ex.local = limparLocal_(semParcelas_(ex.local)) || ex.local;
 
     if (!ex.local || /^dl$/i.test(ex.local)) {
       ex.generico = true;
@@ -260,7 +290,7 @@ const Notificacoes = (function () {
     }
 
     const r = novoRascunho_({
-      tipo: 'despesa', valor: ex.valor, data: ex.data, descricao: ex.local,
+      tipo: 'despesa', valor: ex.valor, data: ex.data, descricao: ex.local, parcelas: ex.parcelas || 1,
       conta: dest.conta, cartao: dest.cartao, categoria: categoria_(ctx, ex, quem)
     }, uid, quem, app, titulo, texto);
     Rascunho.gravarParaRevisar(r);
