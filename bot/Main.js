@@ -120,6 +120,15 @@ function tratarMensagem_(msg) {
     return;
   }
 
+  if (cmd === '/agua' || cmd === '/água' || cmd === '/gas' || cmd === '/gás') {
+    ConsumoBot.comandoLeitura(cmd.indexOf('/g') === 0 ? 'gas' : 'agua', texto.slice(cmd.length), chatId, quem);
+    return;
+  }
+  if (cmd === '/consumo') {
+    ConsumoBot.resumo(chatId);
+    return;
+  }
+
   if (cmd === '/start' || cmd === '/ajuda') {
     Telegram.enviar(chatId, [
       'Olá, ' + Telegram.esc(quem) + '! Me mande um gasto ou recebimento em uma frase, escrita ou em áudio:',
@@ -138,6 +147,8 @@ function tratarMensagem_(msg) {
       '<i>o que vence esta semana?</i>',
       '',
       '/resumo o mês até agora · /saldos das contas · /contas a pagar em 7 dias · /faturas dos cartões · /orcamentos',
+      '',
+      'Consumo da casa: mande a <b>foto do hidrômetro</b> ou de uma <b>conta de luz, gás ou condomínio</b>. /consumo mostra o resumo; <code>/agua 523,100</code> anota a leitura à mão.',
       '/preco arroz mostra onde você pagou menos (vem dos itens dos cupons).',
       '/desfazer apaga o seu último lançamento.'
     ].join('\n'));

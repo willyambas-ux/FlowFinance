@@ -178,7 +178,7 @@ function desenhar() {
   if (S.aba === 'mes') tela.innerHTML = telaMesG();
   else if (S.aba === 'revisar') tela.innerHTML = telaRevisarG();
   else if (S.aba === 'movimentos') tela.innerHTML = telaMovG();
-  else if (['cartoes', 'relatorios', 'planejamento', 'patrimonio', 'importar', 'fechamento', 'config'].indexOf(S.aba) !== -1) tela.innerHTML = telaG2(S.aba);
+  else if (['cartoes', 'relatorios', 'planejamento', 'patrimonio', 'importar', 'fechamento', 'config', 'consumo'].indexOf(S.aba) !== -1) tela.innerHTML = telaG2(S.aba);
   else if (S.aba === 'inicio') tela.innerHTML = telaInicio();
   else if (S.aba === 'lancamentos') tela.innerHTML = telaLancamentos();
   else if (S.aba === 'painel') tela.innerHTML = telaPainel();
