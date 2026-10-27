@@ -49,15 +49,53 @@ const Cupom = (function () {
         conta_id: { type: ['string', 'null'], description: 'id de conta da lista, só se a legenda ou o comprovante indicar com segurança.' },
         cartao_id: { type: ['string', 'null'], description: 'id de cartão da lista, só se a legenda indicar com segurança.' },
         categoria_id: { type: ['string', 'null'], description: 'Categoria mais específica da lista, pensando nos itens e no tipo de loja.' },
-        legivel: { type: 'boolean', description: 'false se a foto está ilegível demais para confiar no valor.' }
+        legivel: { type: 'boolean', description: 'false se a foto está ilegível demais para confiar no valor.' },
+        documento: {
+          type: 'string', enum: ['comprovante', 'conta_consumo', 'medidor', 'outro'],
+          description: 'comprovante = cupom, nota ou comprovante de pagamento; conta_consumo = conta/boleto de luz, gás, água ou condomínio ainda a pagar; medidor = foto do relógio/medidor (hidrômetro, gás, luz); outro = nada disso.'
+        },
+        contas_consumo: {
+          type: 'array',
+          description: 'Só para documento = conta_consumo. Uma entrada por conta (um PDF pode ter várias).',
+          items: {
+            type: 'object',
+            properties: {
+              servico: { type: 'string', enum: ['luz', 'gas', 'agua', 'condominio'] },
+              fornecedor: { type: ['string', 'null'], description: 'Nome curto: "Neoenergia Cosern", "Copa Energia (gás)", "Condomínio Alto da Boa Vista".' },
+              referencia: { type: ['string', 'null'], description: 'Mês de referência da conta, YYYY-MM.' },
+              consumo: { type: ['number', 'null'], description: 'Consumo do mês: kWh na luz, m³ no gás/água.' },
+              dias: { type: ['number', 'null'], description: 'Dias do período de leitura.' },
+              valor_total: { type: ['number', 'null'], description: 'Valor do documento / total a pagar.' },
+              valor_pagar: { type: ['number', 'null'], description: 'Valor cobrado pagando até o vencimento, se houver desconto (ex.: "até 05/11 conceder desconto ... cobrar R$ 806,40").' },
+              vencimento: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
+              valor_agua: { type: ['number', 'null'], description: 'Só no condomínio: valor da linha de água/consumo de água.' },
+              periodo_agua: { type: ['string', 'null'], description: 'Só no condomínio: período da água como escrito (ex.: "setembro-outubro/2026").' },
+              referencia_agua: { type: ['string', 'null'], description: 'Só no condomínio: mês em que termina o período de consumo da água, YYYY-MM.' },
+              historico: {
+                type: 'array', description: 'Tabela de consumo dos meses anteriores impressa na conta (luz: CONSUMO FATURADO; gás: MESES ANTERIORES).',
+                items: { type: 'object', properties: { referencia: { type: 'string', description: 'YYYY-MM' }, consumo: { type: 'number' } }, required: ['referencia', 'consumo'] }
+              }
+            },
+            required: ['servico']
+          }
+        },
+        medidor: {
+          type: 'object',
+          description: 'Só para documento = medidor.',
+          properties: {
+            servico: { type: 'string', enum: ['agua', 'gas', 'luz'] },
+            leitura: { type: ['number', 'null'], description: 'Número total do relógio, com decimais. Hidrômetro: dígitos pretos = m³ inteiros, vermelhos = casas decimais (litros). Ex.: pretos 00523 e vermelhos 100 → 523.100.' },
+            confiavel: { type: 'boolean', description: 'false se algum dígito ficou duvidoso.' }
+          }
+        }
       },
-      required: ['e_comprovante', 'legivel']
+      required: ['e_comprovante', 'legivel', 'documento']
     }
   };
 
   function sistema_(ctx, quem, legenda, fonte) {
     return [
-      'Você lê fotos de cupons fiscais, notas (NFC-e/DANFE), comprovantes de maquininha e de Pix de um casal brasileiro que controla as finanças.',
+      'Você lê fotos de cupons fiscais, notas (NFC-e/DANFE), comprovantes de maquininha e de Pix, contas de consumo (luz, gás, condomínio) e medidores (hidrômetro) de um casal brasileiro que controla as finanças.',
       fonte === 'sefaz'
         ? 'Desta vez você recebe o TEXTO da página oficial da NFC-e no portal da SEFAZ (fonte exata): copie valores, quantidades e itens como estão. Se a página for erro, captcha ou não tiver a nota, e_comprovante = false. ' +
           'Se vier em campos do XML da nota: xFant/xNome = loja/razão social; dhEmi = data; xProd = item; qCom = quantidade; uCom = unidade; vUnCom = preço unitário; vProd = total do item; vDesc = desconto do item (valor do item = vProd - vDesc); vNF = valor pago; tPag: 01 dinheiro, 03 crédito, 04 débito, 10/11 vale, 17 pix.'
@@ -75,6 +113,12 @@ const Cupom = (function () {
       '- conta_id/cartao_id: use SOMENTE ids das listas e só com indicação clara (legenda "xp", "itaú", nome do banco no comprovante). Na dúvida, null.',
       '- Os nomes seguem "NN tipo BANCO": cc = conta corrente, cred = cartão de crédito, vr = vale, ci = investimento.',
       '- Se não for comprovante (foto de outra coisa), e_comprovante = false.',
+      '- documento: conta de luz, gás, água ou boleto de condomínio (algo a pagar, com consumo/vencimento) = conta_consumo, com e_comprovante = false e as contas em contas_consumo. ' +
+        'Comprovante de que uma dessas contas FOI PAGA (Pix, recibo do banco) continua sendo comprovante.',
+      '- Conta de luz: referencia = REF MÊS/ANO; consumo em kWh; historico = tabela CONSUMO FATURADO (ex.: "SET26 345" → 2026-09, 345).',
+      '- Conta de gás: consumo em m³; historico = MESES ANTERIORES (consumo m³ de cada mês).',
+      '- Boleto de condomínio: valor_total = valor do documento; valor_pagar = valor com desconto até o vencimento; valor_agua = linha "Água CONSUMO ..."; referencia = mês do recibo (ex.: "Recibo do Pagador 11/2026" → 2026-11).',
+      '- documento = medidor para foto de relógio/medidor (hidrômetro de água, medidor de gás ou de luz). Leia todos os dígitos; na dúvida, confiavel = false.',
       '- itens: leia todos os itens visíveis. Em produto, padronize o nome para comparar o mesmo produto entre lojas; use o mesmo padrão sempre.',
       '- categoria_id: pense no que foi comprado (a maioria dos itens) e no tipo de loja. Ex.: lápis, caderno = material escolar ou papelaria; comida de supermercado = mercado. Mensalidade é só pagamento à escola. Se nenhuma categoria da lista servir bem, use null.',
       '',
@@ -119,7 +163,7 @@ const Cupom = (function () {
       : 'Leia este comprovante.';
     return Interpretador.chamarIA(sistema_(ctx, quem, legenda, 'foto'),
       blocos.concat([{ type: 'text', text: pedido + (legenda ? ' Legenda: ' + legenda : '') }]),
-      FERRAMENTA, varias ? 8192 : 4096);
+      FERRAMENTA, varias || arquivos.some(a => a.mime === 'application/pdf') ? 8192 : 4096);
   }
 
   /** Consulta a nota na SEFAZ e lê o texto da página com a IA. */
@@ -370,6 +414,12 @@ const Cupom = (function () {
       console.error('cupom: ' + (err && err.stack ? err.stack : err));
       Telegram.enviar(chatId, 'Não consegui ler a foto: ' + Telegram.esc(String(err.message || err)));
       return true;
+    }
+
+    // Conta de luz/gás/condomínio ou foto do medidor: vai para o Consumo
+    if (b.documento === 'medidor' || b.documento === 'conta_consumo') {
+      if (pendKey) cache.remove(pendKey);
+      if (ConsumoBot.tratar(b, chatId, usuarioId, quem, legenda, ctx)) return true;
     }
 
     if (!b.e_comprovante) {

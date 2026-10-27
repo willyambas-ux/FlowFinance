@@ -662,4 +662,26 @@ a.btn { text-decoration: none; }
 .g-imp-passo input[type="file"] { font-size: 13px; }
 .g-dup td { background: var(--cobre-claro); }
 .g-dup td:first-child { box-shadow: inset 3px 0 0 var(--cobre); }
+
+/* Consumo da casa */
+.cons-wrap { display: flex; flex-direction: column; gap: 16px; }
+body:not(.grande) .cons-wrap { padding: 0 16px 24px; }
+body:not(.grande) .cons-cards { grid-template-columns: 1fr; }
+.cons-card { text-align: left; cursor: pointer; font: inherit; color: inherit; gap: 6px; }
+.cons-card:hover { border-color: var(--suave); }
+.cons-card.ativo { border-color: var(--verde); box-shadow: inset 0 0 0 1px var(--verde); }
+.cons-card-topo { display: flex; align-items: center; gap: 8px; }
+.cons-card-topo .g-suave { margin-left: auto; font-size: 13px; }
+.cons-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; display: block; }
+.cons-valor { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cons-linha { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.cons-var { font-size: 12px; font-weight: 700; }
+.cons-alerta { font-size: 13px; color: var(--cobre); background: var(--cobre-claro); border-radius: 10px; padding: 6px 10px; }
+.cons-graf .g-colunas { min-height: 190px; }
+.cons-col { border: none; background: none; padding: 0 0 4px; cursor: pointer; border-radius: 8px; font: inherit; }
+.cons-col:hover { background: var(--linha-2); }
+.cons-barra { width: 70%; max-width: 36px; border-radius: 6px 6px 2px 2px; display: block; }
+.cons-barra.estimada { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.45) 0 4px, transparent 4px 8px); }
+.cons-nota { margin: 0; }
+.g-acoes-topo { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>

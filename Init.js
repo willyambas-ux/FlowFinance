@@ -20,7 +20,9 @@ const Init = (function () {
     'Fechamentos':   ['id','data','conta','saldo_real','criado_em'],
     'Config':        ['chave','valor'],
     // Decisões anotadas na reunião do mês (tela grande, Visão do mês)
-    'Decisoes':      ['id','data','texto','quem','criado_em']
+    'Decisoes':      ['id','data','texto','quem','criado_em'],
+    // Luz, água e gás: conta do mês (tipo fatura) e leitura do medidor (tipo leitura)
+    'Consumo':       ['id','servico','tipo','referencia','data','leitura','consumo','unidade','dias','valor','vencimento','pago_em','lancamento_id','origem','observacao','quem','criado_em']
   };
 
   function ensureAllSheets() {

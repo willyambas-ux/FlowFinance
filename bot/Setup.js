@@ -98,6 +98,8 @@ function configurarComandos() {
       { command: 'faturas', description: 'Faturas dos cartões' },
       { command: 'orcamentos', description: 'Situação dos orçamentos' },
       { command: 'preco', description: 'Onde um produto saiu mais barato (ex.: /preco arroz)' },
+      { command: 'consumo', description: 'Luz, água e gás: último mês e leituras' },
+      { command: 'agua', description: 'Anota a leitura do hidrômetro (ex.: /agua 523,100)' },
       { command: 'desfazer', description: 'Apaga o seu último lançamento' },
       { command: 'ajuda', description: 'Exemplos do que posso fazer' }
     ]

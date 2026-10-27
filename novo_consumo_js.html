@@ -1,0 +1,224 @@
+<script>
+'use strict';
+/* ============================================================================
+ * Consumo da casa: luz, água e gás mês a mês, leituras do hidrômetro e alertas.
+ * Funciona na tela grande (menu lateral) e no celular (pela tela Mais).
+ * ========================================================================== */
+
+(function () {
+  const ICO = '<path d="M12 3c3.5 4.2 6 7.4 6 10.5A6 6 0 0 1 6 13.5C6 10.4 8.5 7.2 12 3z"/>';
+  const iCfg = LATERAL.findIndex(it => it.aba === 'config');
+  LATERAL.splice(iCfg >= 0 ? iCfg : LATERAL.length, 0, { aba: 'consumo', nome: 'Consumo da casa', icone: ICO });
+})();
+
+S.consDados = null;
+S.consServico = 'luz';
+
+const CONS_COR = { luz: '#E0A100', agua: '#2E7FB8', gas: '#B4531F' };
+const CONS_ICONE = {
+  luz: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+  agua: '<path d="M12 3c3.5 4.2 6 7.4 6 10.5A6 6 0 0 1 6 13.5C6 10.4 8.5 7.2 12 3z"/>',
+  gas: '<path d="M12 3c1 3 4 4.5 4 8.5a4 4 0 0 1-8 0c0-2 1-3 2-4 0 1.5.8 2.5 2 2.5 0-3-1-5 0-7z"/><path d="M7 21h10"/>'
+};
+
+function refRotulo(ref, comAno) {
+  const m = String(ref || '').match(/^(\d{4})-(\d{2})/);
+  if (!m) return '';
+  return MESES_CURTOS[Number(m[2]) - 1] + (comAno ? '/' + m[1].slice(2) : '');
+}
+
+function numCons(v, un) {
+  if (v === null || v === undefined || v === '') return '—';
+  const casas = un === 'kWh' ? 0 : (Math.abs(v) < 10 ? 2 : 1);
+  return numBR(v, casas) + (un ? ' ' + un : '');
+}
+
+function telaConsumoG() {
+  const topo = S.grande
+    ? cabecalhoGrande('Consumo da casa', null, '', '<span class="topo-mini">luz, água e gás · contas e leituras do medidor</span>')
+    : '<header class="topo"><div class="topo-titulos"><span class="topo-mini">luz, água e gás</span><h1 class="topo-titulo">Consumo da casa</h1></div>' + botaoAtualizar() + '</header>';
+  const d = S.consDados;
+  if (S.erro_consumo && !d) return topo + falhaTela(S.erro_consumo);
+  if (!d) return topo + '<div class="g-grade-3">' + esqueleto([150, 150, 150]) + '</div>' + esqueleto([300]);
+
+  let h = topo + '<div class="cons-wrap">';
+  // Cartões de resumo
+  h += '<div class="g-grade-3 cons-cards">' + d.servicos.map(s => {
+    const u = s.ultimo;
+    const varTxt = s.variacao_pct === null ? '' :
+      '<span class="cons-var ' + (s.variacao_pct >= 15 ? 'g-alerta' : (s.variacao_pct <= -10 ? 'positivo' : 'g-suave')) + '">' +
+      (s.variacao_pct > 0 ? '+' : (s.variacao_pct < 0 ? '−' : '')) + Math.abs(s.variacao_pct) + '% vs média</span>';
+    return '<button type="button" class="g-cartao cons-card' + (S.consServico === s.id ? ' ativo' : '') + '" data-cons-serv="' + s.id + '" aria-pressed="' + (S.consServico === s.id) + '">' +
+      '<span class="cons-card-topo"><span class="cons-ico" style="color:' + CONS_COR[s.id] + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + CONS_ICONE[s.id] + '</svg></span><b>' + esc(s.nome) + '</b>' +
+      (u ? '<span class="g-suave">' + esc(refRotulo(u.referencia, true)) + '</span>' : '') + '</span>' +
+      (u ? '<span class="cons-valor">' + (u.valor !== null ? brl(u.valor) : '—') + '</span>' +
+        '<span class="cons-linha">' + (u.consumo !== null ? numCons(u.consumo, s.unidade) + (u.estimado ? ' <span class="g-suave">(estimado)</span>' : '') : '<span class="g-suave">sem volume</span>') + varTxt + '</span>'
+        : '<span class="g-suave">Sem contas registradas</span>') +
+      (s.alerta ? '<span class="cons-alerta">' + esc(s.alerta) + '</span>' : '') +
+      '</button>';
+  }).join('') + '</div>';
+
+  const s = d.servicos.find(x => x.id === S.consServico) || d.servicos[0];
+  h += secaoServico(s);
+  h += '</div>';
+  return h;
+}
+
+function secaoServico(s) {
+  const cor = CONS_COR[s.id];
+  const comVolume = s.faturas.filter(f => f.consumo !== null).length >= s.faturas.length / 2;
+  let h = '<section class="g-cartao"><div class="g-entre"><h2>' + esc(s.nome) + ' mês a mês</h2>' +
+    '<span class="g-acoes-topo"><button type="button" class="btn btn-secundario btn-pequeno" data-cons-novo="fatura">Registrar conta</button>' +
+    (s.id === 'luz' ? '' : '<button type="button" class="btn btn-primario btn-pequeno" data-cons-novo="leitura">Anotar leitura</button>') + '</span></div>';
+  if (!s.faturas.length) {
+    h += '<p class="g-vazio">Nenhuma conta de ' + esc(s.nome.toLowerCase()) + ' ainda. Mande a foto da conta no Telegram ou registre aqui.</p></section>';
+  } else {
+    const campo = comVolume ? 'consumo' : 'valor';
+    const max = Math.max.apply(null, s.faturas.map(f => Number(f[campo]) || 0).concat([0.0001]));
+    const media = comVolume ? s.media_consumo : s.media_valor;
+    h += '<div class="cons-graf"><div class="g-colunas" style="--n:' + s.faturas.length + '" role="img" aria-label="' +
+      esc(s.faturas.map(f => refRotulo(f.referencia, true) + ': ' + (f.consumo !== null ? numCons(f.consumo, s.unidade) : '') + (f.valor !== null ? ', ' + brl(f.valor) : '')).join('; ')) + '">' +
+      s.faturas.map(f => {
+        const v = Number(f[campo]) || 0;
+        const alto = media && v > media * 1.15;
+        return '<button type="button" class="g-coluna cons-col" data-cons-edit="' + esc(f.id) + '" title="' + esc(refRotulo(f.referencia, true)) + '">' +
+          '<span class="g-barra-val">' + (f[campo] === null ? '' : (campo === 'valor' ? numBR(v, 0) : numBR(v, s.unidade === 'kWh' ? 0 : 1))) + '</span>' +
+          '<span class="cons-barra' + (f.estimado ? ' estimada' : '') + '" style="height:' + Math.max(3, v / max * 150).toFixed(0) + 'px;background:' + (alto ? 'var(--cobre)' : cor) + '"></span>' +
+          '<span class="g-barra-rot">' + esc(refRotulo(f.referencia, f.referencia.slice(5) === '01')) + '</span></button>';
+      }).join('') + '</div></div>' +
+      '<p class="nota cons-nota">' + (comVolume ? 'Barras = consumo em ' + esc(s.unidade) : 'Barras = valor da conta (R$)') +
+      (media ? ' · média dos 6 meses anteriores: ' + (comVolume ? numCons(media, s.unidade) : brl(media)) : '') +
+      ' · em cobre, mais de 15% acima da média' + (comVolume && s.faturas.some(f => f.estimado) ? ' · listrado = volume estimado pelas leituras' : '') + '.</p>';
+
+    // Tabela
+    h += '<div class="g-rolar"><table class="g-tabela"><thead><tr><th>Mês</th><th class="num">Consumo</th><th class="num">Valor</th><th class="num">R$/' + esc(s.unidade) + '</th><th>Vencimento</th><th>Obs.</th></tr></thead><tbody>' +
+      s.faturas.slice().reverse().map(f => '<tr data-cons-edit="' + esc(f.id) + '" tabindex="0"><td><b>' + esc(maiuscula(refRotulo(f.referencia, true))) + '</b></td>' +
+        '<td class="num">' + numCons(f.consumo, s.unidade) + (f.estimado ? ' <span class="g-suave">est.</span>' : '') + '</td>' +
+        '<td class="num">' + (f.valor !== null ? brl(f.valor) : '<span class="g-suave">—</span>') + '</td>' +
+        '<td class="num g-suave">' + (f.valor && f.consumo && !f.estimado ? numBR(f.valor / f.consumo, 2) : '—') + '</td>' +
+        '<td>' + (f.vencimento ? esc(dataCurta(f.vencimento)) : '<span class="g-suave">—</span>') + '</td>' +
+        '<td class="g-suave g-pequeno">' + esc(f.observacao || '') + '</td></tr>').join('') + '</tbody></table></div>';
+    if (s.preco_unidade) h += '<p class="nota cons-nota">Preço médio recente: <b>' + brl(s.preco_unidade) + ' por ' + esc(s.unidade) + '</b>, com impostos e taxas.</p>';
+    h += '</section>';
+  }
+
+  // Leituras do medidor
+  if (s.id !== 'luz' || s.leituras.length) {
+    h += '<section class="g-cartao"><div class="g-entre"><h2>Leituras do medidor</h2><span class="g-suave">' +
+      (s.dias_sem_leitura === null ? 'nenhuma ainda' : (s.dias_sem_leitura === 0 ? 'última hoje' : 'última há ' + s.dias_sem_leitura + (s.dias_sem_leitura === 1 ? ' dia' : ' dias'))) + '</span></div>';
+    if (!s.leituras.length) {
+      h += '<p class="g-vazio">Mande a foto do ' + (s.id === 'agua' ? 'hidrômetro' : 'medidor') + ' no Telegram (pode escrever "' + esc(s.nome.toLowerCase()) + '" na legenda) ou anote aqui. ' +
+        'Com duas leituras eu calculo o consumo por dia e a projeção do mês; com várias, aviso se o gasto subir de repente (vazamento).</p>';
+    } else {
+      h += '<div class="g-rolar"><table class="g-tabela"><thead><tr><th>Data</th><th class="num">Leitura</th><th class="num">Consumo no período</th><th class="num">Por dia</th><th class="num">Ritmo de 30 dias</th></tr></thead><tbody>' +
+        s.leituras.map(l => '<tr data-cons-leit="' + esc(l.id) + '" tabindex="0"><td><b>' + esc(dataCurta(l.data)) + '</b>' + (l.origem === 'bot' ? ' <span class="g-suave g-pequeno">foto</span>' : '') + '</td>' +
+          '<td class="num">' + numBR(l.leitura, 3) + '</td>' +
+          '<td class="num">' + (l.consumo !== null ? numCons(l.consumo, s.unidade) + ' <span class="g-suave">em ' + l.intervalo + 'd</span>' : '<span class="g-suave">primeira</span>') + '</td>' +
+          '<td class="num">' + (l.por_dia !== null ? (s.unidade === 'm³' ? numBR(l.por_dia * 1000, 0) + ' L' : numCons(l.por_dia, s.unidade)) : '—') + '</td>' +
+          '<td class="num">' + (l.projecao_30 !== null ? numCons(l.projecao_30, s.unidade) : '—') + '</td></tr>').join('') + '</tbody></table></div>';
+    }
+    h += '</section>';
+  }
+  return h;
+}
+
+/* ---------------------------------------------------------------- formulários */
+
+function abrirConsumo(tipo, reg) {
+  const d = S.consDados;
+  const s = d.servicos.find(x => x.id === S.consServico) || d.servicos[0];
+  const editando = !!reg;
+  const hoje = hojeISO();
+  const titulo = tipo === 'leitura' ? (editando ? 'Leitura do medidor' : 'Anotar leitura') : (editando ? 'Conta de ' + s.nome.toLowerCase() : 'Registrar conta');
+  const sel = '<div class="campo"><label for="cs-serv">Serviço</label><select id="cs-serv">' + d.servicos.map(x =>
+    '<option value="' + x.id + '"' + (x.id === s.id ? ' selected' : '') + '>' + esc(x.nome) + '</option>').join('') + '</select></div>';
+  let campos = sel;
+  if (tipo === 'leitura') {
+    campos += '<div class="campo"><label for="cs-data">Data</label><input id="cs-data" type="date" value="' + esc(reg ? reg.data : hoje) + '"></div>' +
+      '<div class="campo"><label for="cs-leit">Leitura do relógio (' + esc(s.unidade) + ')</label><input id="cs-leit" inputmode="decimal" placeholder="ex.: 123,456" value="' + (reg ? numBR(reg.leitura, 3) : '') + '"></div>';
+  } else {
+    const ref = reg ? reg.referencia : hoje.slice(0, 7);
+    campos += '<div class="campo"><label for="cs-ref">Mês de referência</label><input id="cs-ref" type="month" value="' + esc(ref) + '"></div>' +
+      '<div class="campo"><label for="cs-cons">Consumo (' + esc(s.unidade) + ')</label><input id="cs-cons" inputmode="decimal" value="' + (reg && reg.consumo !== null && !reg.estimado ? numBR(reg.consumo, s.unidade === 'kWh' ? 0 : 3) : '') + '"></div>' +
+      '<div class="campo"><label for="cs-valor">Valor da conta</label><input id="cs-valor" inputmode="decimal" value="' + (reg && reg.valor !== null ? numBR(reg.valor) : '') + '"></div>' +
+      '<div class="campo"><label for="cs-venc">Vencimento</label><input id="cs-venc" type="date" value="' + esc(reg ? reg.vencimento : '') + '"></div>' +
+      '<div class="campo"><label for="cs-obs">Observação</label><input id="cs-obs" maxlength="200" value="' + esc(reg ? reg.observacao : '') + '"></div>';
+  }
+  const h = topoFolha(titulo) + '<div class="campos">' + campos + '</div>' +
+    (tipo === 'leitura' ? '<p class="obs">Anote todos os números pretos (m³) e os vermelhos depois da vírgula. Ex.: 0123 pretos e 456 vermelhos = 123,456.</p>' :
+      '<p class="obs">A conta a pagar continua sendo o lançamento do mês (conta fixa). Aqui fica o histórico de consumo.</p>') +
+    '<div class="botoes"><button type="button" class="btn btn-primario" data-acao="salvar-cons">Salvar</button>' +
+    (editando ? '<button type="button" class="btn btn-perigo" data-acao="excluir-cons">Excluir</button>' : '') + '</div>';
+  abrirFolha(h, function (folha) {
+    const b = folha.querySelector('[data-acao="salvar-cons"]');
+    b.onclick = function () {
+      const v = id => { const el = folha.querySelector('#' + id); return el ? el.value : ''; };
+      const dados = { id: reg ? reg.id : '', tipo: tipo, servico: v('cs-serv') };
+      if (tipo === 'leitura') { dados.data = v('cs-data'); dados.leitura = textoParaNumero(v('cs-leit')); }
+      else {
+        dados.referencia = v('cs-ref');
+        dados.consumo = v('cs-cons') ? textoParaNumero(v('cs-cons')) : '';
+        dados.valor = v('cs-valor') ? textoParaNumero(v('cs-valor')) : '';
+        dados.vencimento = v('cs-venc'); dados.observacao = v('cs-obs');
+      }
+      b.disabled = true;
+      run('appSalvarConsumo', dados).then(function () { S.consServico = dados.servico; fecharFolha(); aviso('Salvo.'); S.consDados = null; carregarAba(true); })
+        .catch(function (e) { b.disabled = false; erro(e); });
+    };
+    const ex = folha.querySelector('[data-acao="excluir-cons"]');
+    if (ex) {
+      let armado = false;
+      ex.onclick = function () {
+        if (!armado) { armado = true; ex.textContent = 'Toque de novo para excluir'; return; }
+        ex.disabled = true;
+        run('appExcluirConsumo', reg.id).then(function () { fecharFolha(); aviso('Excluído.'); carregarAba(true); })
+          .catch(function (e) { ex.disabled = false; erro(e); });
+      };
+    }
+  });
+}
+
+function ligarConsumo(tela) {
+  tela.querySelectorAll('[data-cons-serv]').forEach(b => { b.onclick = function () { S.consServico = b.dataset.consServ; desenhar(); }; });
+  tela.querySelectorAll('[data-cons-novo]').forEach(b => { b.onclick = function () { abrirConsumo(b.dataset.consNovo, null); }; });
+  const s = S.consDados && S.consDados.servicos.find(x => x.id === S.consServico);
+  if (!s) return;
+  tela.querySelectorAll('[data-cons-edit]').forEach(el => {
+    const abrir = function () { const f = s.faturas.find(x => x.id === el.dataset.consEdit); if (f) abrirConsumo('fatura', f); };
+    el.onclick = abrir;
+    if (el.tagName === 'TR') el.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+  tela.querySelectorAll('[data-cons-leit]').forEach(el => {
+    const abrir = function () { const l = s.leituras.find(x => x.id === el.dataset.consLeit); if (l) abrirConsumo('leitura', l); };
+    el.onclick = abrir;
+    el.onkeydown = function (e) { if (e.key === 'Enter') abrir(); };
+  });
+}
+
+// Encaixe no núcleo: carregar, desenhar e ligar
+(function () {
+  const carregarAnt = carregarAbaG2, telaAnt = telaG2, ligarAnt = ligarTela, maisAnt = telaMais;
+  carregarAbaG2 = function (aba, forcar, velho) {
+    if (aba === 'consumo') return (forcar || !S.consDados || velho) ? run('appConsumo').then(d => { S.consDados = d; }) : null;
+    return carregarAnt(aba, forcar, velho);
+  };
+  telaG2 = function (aba) { return aba === 'consumo' ? telaConsumoG() : telaAnt(aba); };
+  ligarTela = function () {
+    ligarAnt();
+    const tela = document.getElementById('tela');
+    if (S.aba === 'consumo') ligarConsumo(tela);
+    const b = tela.querySelector('[data-acao="abrir-consumo"]');
+    if (b) b.onclick = function () { mostrarAba('consumo'); };
+  };
+  // No celular, entra pela tela Mais
+  telaMais = function () {
+    const h = maisAnt();
+    const botao = '<div class="bloco menu"><button type="button" data-acao="abrir-consumo"><svg viewBox="0 0 24 24" aria-hidden="true">' + CONS_ICONE.agua + '</svg>' +
+      '<span>Consumo da casa<small>Luz, água e gás mês a mês e leituras do medidor</small></span>' + ICONE.seta + '</button></div>';
+    const i = h.indexOf('<div class="secao"><h2>Mais telas</h2>');
+    return i === -1 ? h + botao : h.slice(0, i) + botao + h.slice(i);
+  };
+  PARA_GRANDE.consumo = 'consumo';
+  PARA_CELULAR.consumo = 'consumo';
+})();
+</script>
