@@ -1,0 +1,580 @@
+<script>
+'use strict';
+/* ============================================================================
+ * Lançamentos (tela grande)
+ *  - painel de contas e cartões à esquerda (recolhe), que também filtra;
+ *  - resumo do mês (realizado, previsto, a pagar, saldo no fim do mês);
+ *  - filtros de largura fixa (situação, tipo, categoria, pessoa) e etiquetas
+ *    dos filtros ativos;
+ *  - tabela agrupada por dia, com o saldo do dia, e o bloco "próximos dias";
+ *  - rodapé fixo com a soma (ou as ações dos selecionados);
+ *  - detalhe ao lado sem esconder a lista, e atalhos de teclado.
+ * ========================================================================== */
+
+S.fTipo = 'todos';
+S.proxAberto = false;
+S.focoMov = '';
+
+const SITUACOES_MOV = [
+  { id: 'tudo', nome: 'Tudo', f: () => true },
+  { id: 'revisar', nome: 'A revisar', f: l => l.status === 'revisar' },
+  { id: 'apagar', nome: 'A pagar', f: l => l.status === 'pendente' || l.status === 'agendado' }
+];
+const TIPOS_MOV = [
+  { id: 'todos', nome: 'Todos', f: () => true },
+  { id: 'saidas', nome: 'Saídas', f: l => l.valor < 0 && !l.transferencia },
+  { id: 'entradas', nome: 'Entradas', f: l => l.valor > 0 && !l.transferencia },
+  { id: 'transf', nome: 'Transf.', f: l => l.transferencia }
+];
+const NOMES_BANCO = { IT: 'Itaú', ITI: 'Iti', BB: 'BB', CX: 'Caixa', XP: 'XP', NU: 'Nubank', PX: 'Pluxee', BT: 'BTG', CL: 'C6' };
+const CORES_CAT = ['#0B6B58', '#2E7FB8', '#B4531F', '#7A4FB5', '#C28A00', '#C2416B', '#3F7D20', '#5A6472', '#0F8FA3', '#9A5B13'];
+
+function realizado_(l) { return l.status === 'confirmado' || l.status === 'conciliado' || l.status === 'revisar'; }
+
+/** "01 cc IT" → "Itaú"; "42 cred ITI" → "Iti". Mantém o nome se a sigla for desconhecida. */
+function nomeCurtoPag(nome) {
+  const sig = siglaPagamento(nome);
+  return NOMES_BANCO[sig] || String(nome || '');
+}
+
+function corCategoria(id) {
+  const c = acharCategoria(id);
+  if (!c) return 'var(--linha)';
+  const base = c.pai || c.id;
+  let h = 0;
+  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
+  return CORES_CAT[h % CORES_CAT.length];
+}
+
+function painelRecolhido() { return prefLer('painel_contas_fechado', false); }
+
+/* ------------------------------------------------------------------ filtros */
+
+function normalizarFiltrosMov_() {
+  // Compatível com os atalhos antigos (Visão do mês manda filtro: 'saidas' etc.)
+  if (TIPOS_MOV.some(t => t.id === S.filtro && t.id !== 'todos')) { S.fTipo = S.filtro; S.filtro = 'tudo'; }
+  if (!SITUACOES_MOV.some(t => t.id === S.filtro)) S.filtro = 'tudo';
+  if (!TIPOS_MOV.some(t => t.id === S.fTipo)) S.fTipo = 'todos';
+}
+
+function filtrarMovG() {
+  normalizarFiltrosMov_();
+  const sit = SITUACOES_MOV.find(f => f.id === S.filtro) || SITUACOES_MOV[0];
+  const tipo = TIPOS_MOV.find(f => f.id === S.fTipo) || TIPOS_MOV[0];
+  return filtrarBaseMovG().filter(l => sit.f(l) && tipo.f(l));
+}
+
+function temFiltroMov() {
+  return !!(S.busca || (S.fContas || []).length || (S.fCats || []).length || (S.fQuems || []).length || S.filtro !== 'tudo' || S.fTipo !== 'todos');
+}
+
+/** Saldo por dia das contas filtradas (ou de todas); null se o filtro tiver cartão. */
+function saldosMov_() {
+  const fc = S.fContas || [];
+  if (!fc.length) return S.saldosDia || null;
+  if (!fc.every(k => k.indexOf('c:') === 0)) return null;
+  const out = {};
+  fc.forEach(k => { const s = (S.saldosConta || {})[k.slice(2)] || {}; Object.keys(s).forEach(d => { out[d] = Math.round(((out[d] || 0) + s[d]) * 100) / 100; }); });
+  return out;
+}
+
+function segmentado(lista, atual, attr, contar) {
+  const base = contar ? filtrarBaseMovG() : null;
+  return '<div class="mv-seg" role="group">' + lista.map(f => {
+    const n = contar && f.id !== lista[0].id ? base.filter(f.f).length : null;
+    return '<button type="button" ' + attr + '="' + f.id + '" aria-pressed="' + (atual === f.id) + '">' + esc(f.nome) +
+      (n !== null ? '<span class="mv-seg-n">' + n + '</span>' : '') + '</button>';
+  }).join('') + '</div>';
+}
+
+function filtrosDinamicosMov() {
+  const temPessoas = opcoesPicker('quem').length > 1;
+  return segmentado(SITUACOES_MOV, S.filtro, 'data-sit', true) +
+    segmentado(TIPOS_MOV, S.fTipo, 'data-tipo', false) +
+    (painelRecolhido() ? botaoPicker('conta') : '') + botaoPicker('cat') + (temPessoas ? botaoPicker('quem') : '');
+}
+
+/** Etiquetas dos filtros ativos, cada uma com o seu ×. */
+function tagsFiltroMov() {
+  if (!temFiltroMov()) return '';
+  const tags = [];
+  const tag = (rot, acao, marca) => tags.push('<span class="mv-tag">' + (marca || '') + '<span>' + rot + '</span><button type="button" data-tirar="' + esc(acao) + '" aria-label="Tirar filtro">×</button></span>');
+  if (S.busca) tag('“' + esc(S.busca) + '”', 'busca');
+  if (S.filtro !== 'tudo') tag(esc(SITUACOES_MOV.find(f => f.id === S.filtro).nome), 'sit');
+  if (S.fTipo !== 'todos') tag(esc(TIPOS_MOV.find(f => f.id === S.fTipo).nome), 'tipo');
+  (S.fContas || []).forEach(k => { const i = infoPagamento(k); tag(esc(nomeCurtoPag(i.nome)), 'conta:' + k, marcaPagamento(i, 14)); });
+  (S.fCats || []).forEach(id => { const c = acharCategoria(id); tag(esc(c ? c.nome : 'Sem categoria'), 'cat:' + id, '<i class="mv-dot" style="background:' + corCategoria(id) + '"></i>'); });
+  (S.fQuems || []).forEach(q => tag(esc(q === '_ninguem' ? 'Sem pessoa' : q), 'quem:' + q));
+  const n = filtrarMovG().length;
+  return '<div class="mv-tags">' + tags.join('') + '<button type="button" class="link-btn" data-acao="limpar-filtros">Limpar tudo</button>' +
+    '<span class="g-suave mv-tags-n">' + n + ' de ' + S.lista.length + ' lançamentos · totais e saldos seguem os filtros</span></div>';
+}
+
+/* ------------------------------------------------------------------ resumo */
+
+function totaisMovG() {
+  const itens = filtrarMovG();
+  let entR = 0, entP = 0, saiR = 0, saiP = 0, apagar = 0, nApagar = 0;
+  itens.forEach(l => {
+    if (l.transferencia) return;
+    const r = realizado_(l);
+    if (l.valor > 0) { if (r) entR += l.valor; else entP += l.valor; }
+    else { if (r) saiR += -l.valor; else saiP += -l.valor; }
+    if (!r && l.valor < 0) { apagar += -l.valor; nApagar++; }
+  });
+  const ant = !temFiltroMov() || (S.fTipo !== 'todos' && !S.busca && !(S.fContas || []).length && !(S.fCats || []).length) ? S.antMov : null;
+  const m = S.listaMes || mesAtual();
+  const mesAnt = MESES_CURTOS[(m.mes + 10) % 12];
+  const comp = (atual, antes, despesa) => {
+    if (!ant || !antes) return '';
+    // Mês anterior incompleto (antes do marco zero) daria comparação sem sentido
+    if (atual / antes > 2.5 || atual / antes < 0.4) return '';
+    const p = Math.round((atual / antes - 1) * 100);
+    const ruim = despesa ? p > 0 : p < 0;
+    return '<span class="mv-comp ' + (Math.abs(p) < 3 ? '' : (ruim ? 'g-alerta' : 'positivo')) + '">' + (p > 0 ? '▲ ' : (p < 0 ? '▼ ' : '')) + Math.abs(p) + '% vs ' + mesAnt + '</span>';
+  };
+  const saldos = saldosMov_();
+  const dias = saldos ? Object.keys(saldos).sort() : [];
+  const fim = dias.length ? saldos[dias[dias.length - 1]] : null;
+  const hoje = hojeISO();
+  let menor = null;
+  dias.filter(d => d >= hoje).forEach(d => { if (menor === null || saldos[d] < menor.v) menor = { d: d, v: saldos[d] }; });
+  const tile = (rot, valor, cls, sub) => '<div class="mv-tile"><span class="mv-tile-rot">' + rot + '</span><b class="' + (cls || '') + '">' + valor + '</b>' + (sub ? '<span class="mv-tile-sub">' + sub + '</span>' : '') + '</div>';
+  const entTot = entR + entP, saiTot = saiR + saiP;
+  return '<div class="mv-resumo' + (temFiltroMov() ? ' filtrado' : '') + '">' +
+    tile('Entrou', '+' + numBR(entR), 'positivo', [entP ? '+' + numBR(entP) + ' previsto' : '', comp(entTot, ant && ant.entradas, false)].filter(Boolean).join(' · ')) +
+    tile('Saiu', '−' + numBR(saiR), '', [saiP ? '−' + numBR(saiP) + ' previsto' : '', comp(saiTot, ant && ant.saidas, true)].filter(Boolean).join(' · ')) +
+    tile('A pagar no mês', '−' + numBR(apagar), apagar ? 'g-alerta' : '', nApagar ? nApagar + (nApagar === 1 ? ' conta' : ' contas') + ' agendadas ou pendentes' : 'nada pendente') +
+    tile('Saldo no fim do mês', fim === null ? '—' : brl(fim), fim !== null && fim < 0 ? 'g-alerta' : '',
+      fim === null ? ((S.fContas || []).length ? 'cartão não tem saldo de caixa' : 'sem contas') :
+        (menor && menor.v < 0 ? '⚠ fica negativo em ' + dataCurta(menor.d) : ((S.fContas || []).length ? 'das contas filtradas, com o previsto' : 'todas as contas, com o previsto'))) +
+    '</div>';
+}
+
+/* ------------------------------------------------------------ painel de contas */
+
+function painelContasG() {
+  if (painelRecolhido()) {
+    return '<button type="button" class="mv-painel-abrir" data-acao="painel-contas" title="Mostrar contas e cartões" aria-label="Mostrar contas e cartões">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg><span>Contas</span></button>';
+  }
+  const m = S.listaMes || mesAtual();
+  const mesStr = m.ano + '-' + String(m.mes).padStart(2, '0');
+  const hoje = hojeISO();
+  const atual = hoje.slice(0, 7) === mesStr;
+  const passado = hoje.slice(0, 7) > mesStr;
+  const sel = S.fContas || [];
+  const lista = S.lista || [];
+  const porConta = S.saldosConta || {};
+  const revisar = k => lista.filter(l => chavePagamento(l) === k && l.status === 'revisar').length;
+
+  let totHoje = 0, totFim = 0;
+  const contas = (S.boot.contas || []).filter(c => porConta[c.id]).map(c => {
+    const serie = porConta[c.id];
+    const dias = Object.keys(serie).sort();
+    const fim = dias.length ? serie[dias[dias.length - 1]] : 0;
+    const agora = atual && serie[hoje] !== undefined ? serie[hoje] : fim;
+    let menor = null;
+    if (!passado) dias.filter(d => d >= hoje).forEach(d => { if (menor === null || serie[d] < menor.v) menor = { d: d, v: serie[d] }; });
+    totHoje += agora; totFim += fim;
+    return { k: 'c:' + c.id, c: c, agora: agora, fim: fim, menor: menor, rev: revisar('c:' + c.id) };
+  });
+
+  const item = (k, info, nome, valor, sub, extra) => {
+    const ativo = sel.indexOf(k) !== -1;
+    return '<button type="button" class="mv-conta' + (ativo ? ' ativo' : '') + '" data-conta-k="' + esc(k) + '" aria-pressed="' + ativo + '" title="' + esc(info.nome) + ' · Ctrl+clique para somar contas">' +
+      marcaPagamento(info, 22) + '<span class="mv-conta-txt"><span class="mv-conta-nome">' + esc(nome) + (extra || '') + '</span>' +
+      (sub ? '<span class="mv-conta-sub">' + sub + '</span>' : '') + '</span>' + valor + '</button>';
+  };
+
+  let h = '<div class="mv-painel-topo"><b>Contas e cartões</b><button type="button" class="icone-btn sem-borda" data-acao="painel-contas" title="Recolher" aria-label="Recolher o painel">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button></div>';
+  // Valores lado a lado: hoje e fim do mês (no mês corrente); nos outros, só o fim do mês
+  const vals = (hojeV, fimV) => atual
+    ? '<span class="mv-vals"><b class="' + (hojeV < 0 ? 'g-alerta' : '') + '">' + numBR(hojeV) + '</b><b class="mv-vals-fim' + (fimV < 0 ? ' g-alerta' : '') + '">' + numBR(fimV) + '</b></span>'
+    : '<b class="mv-conta-val' + (fimV < 0 ? ' g-alerta' : '') + '">' + numBR(fimV) + '</b>';
+  const colunas = atual ? '<span class="mv-cols"><span>hoje</span><span>fim do mês</span></span>' : '<span>' + (passado ? 'fim do mês' : 'previsto') + '</span>';
+  h += '<div class="mv-grupo mv-grupo-topo">' + colunas + '</div>';
+  h += '<button type="button" class="mv-conta mv-todas' + (!sel.length ? ' ativo' : '') + '" data-conta-k="">' +
+    '<span class="mv-conta-txt"><span class="mv-conta-nome">Todas</span></span>' + vals(totHoje, totFim) + '</button>';
+
+  h += '<div class="mv-grupo">Contas</div>';
+  h += contas.map(x => {
+    const info = infoPagamento(x.k);
+    const alerta = x.menor && x.menor.v < 0;
+    const sub = alerta ? '<span class="g-alerta">⚠ negativo em ' + dataCurta(x.menor.d) + '</span>' : '';
+    const extra = x.rev ? '<i class="mv-ponto" title="' + x.rev + ' a revisar"></i>' : '';
+    return item(x.k, info, nomeCurtoPag(x.c.nome), vals(x.agora, x.fim), sub, extra);
+  }).join('');
+
+  const cartoes = S.cartoesMov || [];
+  if (cartoes.length) {
+    h += '<div class="mv-grupo">Cartões<span>' + (cartoes[0].aberta ? 'fatura aberta' : 'fatura do mês') + '</span></div>';
+    h += cartoes.map(c => {
+      const k = 'k:' + c.id;
+      const info = infoPagamento(k);
+      const pct = c.limite > 0 ? Math.min(100, c.usado / c.limite * 100) : 0;
+      const vence = c.vencimento ? 'vence ' + dataCurta(c.vencimento) : '';
+      const rev = revisar(k);
+      const sub = '<span>' + (vence || 'fatura do mês') + '</span>' +
+        (c.limite ? '<span class="mv-limite" title="' + Math.round(pct) + '% do limite: ' + numBR(c.usado, 0) + ' de ' + numBR(c.limite, 0) + '"><span style="width:' + pct.toFixed(0) + '%;background:' + (pct > 85 ? 'var(--cobre)' : 'var(--verde)') + '"></span></span>' : '');
+      return item(k, info, nomeCurtoPag(c.nome), '<b class="mv-conta-val">' + numBR(c.fatura) + '</b>', sub, rev ? '<i class="mv-ponto" title="' + rev + ' a revisar"></i>' : '');
+    }).join('');
+  }
+  h += '<p class="mv-painel-nota">Clique para filtrar · Ctrl+clique soma várias</p>';
+  return h;
+}
+
+/* ------------------------------------------------------------------ tabela */
+
+const ACAO_ICO = {
+  editar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>',
+  duplicar: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
+  excluir: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>'
+};
+
+function linhaMov_(l, mostrarQuem) {
+  const c = acharCategoria(l.categoria);
+  const info = chavePagamento(l) ? infoPagamento(chavePagamento(l)) : null;
+  let cat;
+  if (l.transferencia) cat = '<span class="mv-cat"><i class="mv-dot" style="background:var(--suave)"></i>Transferência</span>';
+  else if (c) cat = '<span class="mv-cat" title="' + esc(c.caminho) + '"><i class="mv-dot" style="background:' + corCategoria(c.id) + '"></i>' + esc(c.nome) + '</span>';
+  else cat = '<span class="mv-cat g-suave"><i class="mv-dot"></i>sem categoria</span>';
+  const st = { pendente: ['A pagar', 'apagar'], agendado: ['Agendado', 'agendado'], revisar: ['A revisar', 'revisar'] }[l.status];
+  const etiquetas = (l.parcela ? '<span class="mv-etq">' + esc(l.parcela) + '</span>' : '') +
+    (l.serie && !l.parcela ? '<span class="mv-etq" title="Conta fixa (repete todo mês)">↻ fixa</span>' : '');
+  return '<tr data-mov="' + esc(l.id) + '" class="' + (S.sel.has(l.id) ? 'sel' : '') + (S.focoMov === l.id ? ' foco' : '') + '" tabindex="0">' +
+    '<td class="g-col-check"><input type="checkbox" data-sel="' + esc(l.id) + '" aria-label="Selecionar ' + esc(l.descricao) + '"' + (S.sel.has(l.id) ? ' checked' : '') + '></td>' +
+    '<td class="mv-desc"><div class="mv-desc-in"><span class="mv-desc-txt" title="' + esc(l.descricao) + '">' + esc(l.descricao) + '</span>' + etiquetas + '</div></td>' +
+    '<td>' + cat + '</td>' +
+    '<td><span class="mv-pag">' + (info ? marcaPagamento(info, 18) + '<span>' + esc(nomeCurtoPag(info.nome)) + (info.cartao ? ' <span class="g-suave">crédito</span>' : '') + '</span>' : '<span class="g-suave">—</span>') + '</span></td>' +
+    (mostrarQuem ? '<td><span class="mv-quem" title="' + esc(l.quem || 'sem pessoa') + '">' + esc((l.quem || '·').charAt(0).toUpperCase()) + '</span></td>' : '') +
+    '<td>' + (st ? '<span class="g-status ' + st[1] + '">' + st[0] + '</span>' : '') + '</td>' +
+    '<td class="num"><b class="' + (l.valor > 0 ? 'positivo' : '') + '">' + sinal(l.valor) + '</b></td>' +
+    '<td class="mv-acoes"><button type="button" data-acao-linha="editar" title="Editar">' + ACAO_ICO.editar + '</button>' +
+    (l.transferencia ? '' : '<button type="button" data-acao-linha="duplicar" title="Duplicar">' + ACAO_ICO.duplicar + '</button>') +
+    '<button type="button" data-acao-linha="excluir" title="Excluir">' + ACAO_ICO.excluir + '</button></td></tr>';
+}
+
+function diaRotulo_(iso) {
+  const d = dataObj(iso);
+  const dif = diasEntre(hojeISO(), iso);
+  const nome = dif === 0 ? 'Hoje' : (dif === -1 ? 'Ontem' : (dif === 1 ? 'Amanhã' : maiuscula(DIAS_CURTOS[d.getDay()])));
+  return nome + ', ' + d.getDate() + ' ' + MESES_CURTOS[d.getMonth()];
+}
+
+function blocoDias_(itens, colunas, saldos, mostrarQuem) {
+  const porDia = {};
+  const ordem = [];
+  itens.forEach(l => { if (!porDia[l.data]) { porDia[l.data] = []; ordem.push(l.data); } porDia[l.data].push(l); });
+  return ordem.map(d => {
+    const ls = porDia[d];
+    const tot = ls.reduce((t, l) => t + (l.transferencia ? 0 : l.valor), 0);
+    const saldo = saldos && saldos[d] !== undefined ? saldos[d] : null;
+    return '<tr class="mv-dia"><td colspan="' + colunas + '"><div class="mv-dia-linha"><b>' + esc(diaRotulo_(d)) + '</b>' +
+      '<span class="g-suave">' + ls.length + (ls.length === 1 ? ' lançamento' : ' lançamentos') + '</span><span class="g-espaco"></span>' +
+      (tot ? '<span class="mv-dia-tot ' + (tot > 0 ? 'positivo' : '') + '">' + sinal(tot) + '</span>' : '') +
+      (saldo !== null ? '<span class="mv-dia-saldo' + (saldo < 0 ? ' g-alerta' : '') + '" title="Saldo no fim do dia">saldo ' + numBR(saldo) + '</span>' : '') +
+      '</div></td></tr>' + ls.map(l => linhaMov_(l, mostrarQuem)).join('');
+  }).join('');
+}
+
+function corpoMovG() {
+  const itens = filtrarMovG();
+  S.sel = new Set(Array.from(S.sel).filter(id => itens.some(i => i.id === id)));
+  if (!itens.length) {
+    return '<div class="g-cartao mv-vazio"><p>Nenhum lançamento' + (S.lista.length ? ' com esses filtros' : ' neste mês') + '.</p>' +
+      (temFiltroMov() ? '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="limpar-filtros">Limpar filtros</button>' : '') + '</div>';
+  }
+  const mostrarQuem = opcoesPicker('quem').filter(o => o.k !== '_ninguem').length > 1;
+  const colunas = 7 + (mostrarQuem ? 1 : 0);
+  const saldos = saldosMov_();
+  const hoje = hojeISO();
+  const m = S.listaMes || mesAtual();
+  const mesAtualSim = hoje.slice(0, 7) === m.ano + '-' + String(m.mes).padStart(2, '0');
+  // Próximos dias: só no mês corrente, sem filtro de situação, e se houver passado também
+  const futuros = mesAtualSim && S.filtro === 'tudo' ? itens.filter(l => l.data > hoje) : [];
+  const passados = futuros.length ? itens.filter(l => l.data <= hoje) : itens;
+  let corpo = '';
+  if (futuros.length && passados.length) {
+    const tot = futuros.reduce((t, l) => t + (l.transferencia ? 0 : l.valor), 0);
+    corpo += '<tr class="mv-prox"><td colspan="' + colunas + '"><button type="button" data-acao="proximos" aria-expanded="' + S.proxAberto + '">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + (S.proxAberto ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6') + '"/></svg>' +
+      '<b>Próximos dias deste mês</b><span class="g-suave">' + futuros.length + (futuros.length === 1 ? ' lançamento' : ' lançamentos') + ' · agendados e contas fixas</span>' +
+      '<span class="g-espaco"></span><b class="' + (tot > 0 ? 'positivo' : '') + '">' + sinal(tot) + '</b></button></td></tr>';
+    if (S.proxAberto) corpo += blocoDias_(futuros.slice().sort((a, b) => a.data.localeCompare(b.data)), colunas, saldos, mostrarQuem);
+    corpo += blocoDias_(passados, colunas, saldos, mostrarQuem);
+  } else {
+    corpo += blocoDias_(itens, colunas, saldos, mostrarQuem);
+  }
+  return '<div class="g-cartao g-sem-pad mv-tabela"><table class="g-tabela g-selecionavel"><thead><tr>' +
+    '<th class="g-col-check"><input type="checkbox" data-sel-todos aria-label="Selecionar todos"' + (S.sel.size && S.sel.size === itens.length ? ' checked' : '') + '></th>' +
+    '<th>Descrição</th><th>Categoria</th><th>Conta ou cartão</th>' + (mostrarQuem ? '<th>Quem</th>' : '') + '<th>Situação</th><th class="num">Valor</th><th class="mv-acoes-th"><span class="sr">Ações</span></th></tr></thead>' +
+    '<tbody>' + corpo + '</tbody></table></div>';
+}
+
+/** Rodapé fixo: soma do que está na tela, ou as ações dos selecionados. */
+function rodapeMovG() {
+  if (!S.lista) return '';
+  const itens = filtrarMovG();
+  if (S.sel.size) return barraLote('mov', itens);
+  let ent = 0, sai = 0;
+  itens.forEach(l => { if (l.transferencia) return; if (l.valor > 0) ent += l.valor; else sai += -l.valor; });
+  return '<div class="mv-soma"><b>' + itens.length + (itens.length === 1 ? ' lançamento' : ' lançamentos') + '</b>' +
+    '<span>entradas <b class="positivo">+' + numBR(ent) + '</b></span><span>saídas <b>−' + numBR(sai) + '</b></span>' +
+    '<span>resultado <b class="' + (ent - sai >= 0 ? 'positivo' : 'g-alerta') + '">' + sinal(ent - sai) + '</b></span><span class="g-espaco"></span>' +
+    '<button type="button" class="link-btn mv-atalhos-btn" data-acao="atalhos">Atalhos do teclado</button></div>';
+}
+
+/* ------------------------------------------------------------------ tela */
+
+function telaMovG() {
+  normalizarFiltrosMov_();
+  const m = S.listaMes || mesAtual();
+  const topo = cabecalhoGrande('Lançamentos', m, 'mov', '<button type="button" class="btn btn-secundario btn-pequeno" data-acao="novo">Novo lançamento</button>');
+  const recolhido = painelRecolhido();
+  let h = '<div class="mv-layout' + (recolhido ? ' mv-sem-painel' : '') + '">' +
+    '<aside class="mv-painel" id="mv-painel" aria-label="Contas e cartões">' + (S.lista ? painelContasG() : (recolhido ? painelContasG() : esqueleto([40, 52, 52, 52, 52, 52]))) + '</aside><div class="mv-main">' + topo;
+  if (S.erro_movimentos && !S.lista) return h + falhaTela(S.erro_movimentos) + '</div></div>';
+  if (!S.lista) return h + '<div class="mv-resumo">' + esqueleto([62, 62, 62, 62]) + '</div>' + esqueleto([44, 480]) + '</div></div>';
+  h += '<div id="mov-totais">' + totaisMovG() + '</div>';
+  h += '<div class="mv-filtros"><div class="busca g-busca mv-busca' + (S.busca ? ' ativo' : '') + '">' + ICONE.busca + '<label for="busca" class="sr">Buscar</label>' +
+    '<input id="busca" type="search" placeholder="Buscar descrição, categoria, conta ou valor  ( / )" value="' + esc(S.busca) + '"></div>' +
+    '<div id="mov-filtros-din" class="mv-filtros-din">' + filtrosDinamicosMov() + '</div></div>';
+  h += '<div id="mov-tags">' + tagsFiltroMov() + '</div>';
+  h += '<div id="mov-corpo">' + corpoMovG() + '</div>';
+  h += '<div id="mov-rodape" class="mv-rodape">' + rodapeMovG() + '</div>';
+  return h + '</div></div>';
+}
+
+/** Atualiza tudo menos a busca (o foco fica no campo). */
+function atualizarMov(tela) {
+  const set = (id, html) => { const el = tela.querySelector('#' + id); if (el) el.innerHTML = html; };
+  set('mov-totais', totaisMovG());
+  set('mov-filtros-din', filtrosDinamicosMov());
+  set('mov-tags', tagsFiltroMov());
+  set('mv-painel', painelContasG());
+  const b = tela.querySelector('.g-busca'); if (b) b.classList.toggle('ativo', !!S.busca);
+  const pop = document.getElementById('g-pop');
+  if (pop) { const bt = tela.querySelector('[data-pick="' + pop.dataset.qual + '"]'); if (bt) bt.setAttribute('aria-expanded', 'true'); }
+  redesenharTabela(tela);
+  ligarFiltrosMov(tela);
+}
+
+function redesenharTabela(tela) {
+  if (S.aba !== 'movimentos') { desenhar(); return; }
+  const corpo = tela.querySelector('#mov-corpo'); if (corpo) corpo.innerHTML = corpoMovG();
+  const rod = tela.querySelector('#mov-rodape'); if (rod) rod.innerHTML = rodapeMovG();
+  ligarTabelaMov(tela);
+}
+
+/* ------------------------------------------------------------------ eventos */
+
+function tirarFiltro_(acao) {
+  if (acao === 'busca') { S.busca = ''; const bi = document.getElementById('busca'); if (bi) bi.value = ''; }
+  else if (acao === 'sit') S.filtro = 'tudo';
+  else if (acao === 'tipo') S.fTipo = 'todos';
+  else {
+    const i = acao.indexOf(':'), tipo = acao.slice(0, i), v = acao.slice(i + 1);
+    const chave = { conta: 'fContas', cat: 'fCats', quem: 'fQuems' }[tipo];
+    if (chave) S[chave] = (S[chave] || []).filter(x => x !== v);
+  }
+  S.sel = new Set();
+}
+
+function ligarFiltrosMov(tela) {
+  tela.querySelectorAll('[data-sit]').forEach(bt => { bt.onclick = function () { S.filtro = bt.dataset.sit; S.sel = new Set(); atualizarMov(tela); }; });
+  tela.querySelectorAll('[data-tipo]').forEach(bt => { bt.onclick = function () { S.fTipo = bt.dataset.tipo; S.sel = new Set(); atualizarMov(tela); }; });
+  tela.querySelectorAll('[data-pick]').forEach(bt => {
+    bt.onclick = function (e) {
+      const x = e.target.closest('[data-pick-limpar]');
+      if (x) { e.stopPropagation(); S[PICKERS[x.dataset.pickLimpar].estado] = []; S.sel = new Set(); fecharPicker(); atualizarMov(tela); return; }
+      abrirPicker(bt.dataset.pick, bt, tela);
+    };
+  });
+  tela.querySelectorAll('[data-tirar]').forEach(bt => { bt.onclick = function () { tirarFiltro_(bt.dataset.tirar); atualizarMov(tela); }; });
+  tela.querySelectorAll('[data-acao="limpar-filtros"]').forEach(bt => {
+    bt.onclick = function () {
+      S.filtro = 'tudo'; S.fTipo = 'todos'; S.busca = ''; S.fContas = []; S.fCats = []; S.fQuems = []; S.sel = new Set();
+      const bi = tela.querySelector('#busca'); if (bi) bi.value = '';
+      fecharPicker(); atualizarMov(tela);
+    };
+  });
+  // Painel de contas
+  tela.querySelectorAll('[data-acao="painel-contas"]').forEach(bt => {
+    bt.onclick = function () { prefGravar('painel_contas_fechado', !painelRecolhido()); fecharPicker(); desenhar(); };
+  });
+  tela.querySelectorAll('[data-conta-k]').forEach(bt => {
+    bt.onclick = function (e) {
+      const k = bt.dataset.contaK;
+      if (!k) S.fContas = [];
+      else if (e.ctrlKey || e.metaKey) {
+        const a = (S.fContas || []).slice(); const i = a.indexOf(k);
+        if (i === -1) a.push(k); else a.splice(i, 1);
+        S.fContas = a;
+      } else S.fContas = (S.fContas || []).length === 1 && S.fContas[0] === k ? [] : [k];
+      S.sel = new Set();
+      atualizarMov(tela);
+    };
+  });
+}
+
+function ligarTabelaMov(tela) {
+  const corpo = tela.querySelector('#mov-corpo');
+  const rod = tela.querySelector('#mov-rodape');
+  if (!corpo) return;
+  const lista = filtrarMovG();
+  corpo.querySelectorAll('input[data-sel]').forEach(cb => {
+    cb.onclick = function (e) { e.stopPropagation(); };
+    cb.onchange = function () { if (cb.checked) S.sel.add(cb.dataset.sel); else S.sel.delete(cb.dataset.sel); redesenharTabela(tela); };
+  });
+  const todos = corpo.querySelector('input[data-sel-todos]');
+  if (todos) todos.onchange = function () { S.sel = todos.checked ? new Set(lista.map(i => i.id)) : new Set(); redesenharTabela(tela); };
+  if (rod) rod.querySelectorAll('[data-lote]').forEach(b => { b.onclick = function () { acaoLote('mov', b.dataset.lote, tela, b); }; });
+  if (rod) { const at = rod.querySelector('[data-acao="atalhos"]'); if (at) at.onclick = mostrarAtalhos; }
+  const prox = corpo.querySelector('[data-acao="proximos"]');
+  if (prox) prox.onclick = function () { S.proxAberto = !S.proxAberto; redesenharTabela(tela); };
+  corpo.querySelectorAll('[data-acao="limpar-filtros"]').forEach(bt => { bt.onclick = function () { S.filtro = 'tudo'; S.fTipo = 'todos'; S.busca = ''; S.fContas = []; S.fCats = []; S.fQuems = []; const bi = tela.querySelector('#busca'); if (bi) bi.value = ''; atualizarMov(tela); }; });
+  corpo.querySelectorAll('tr[data-mov]').forEach(tr => {
+    const it = S.lista.find(l => l.id === tr.dataset.mov);
+    const abrir = function () { if (it) abrirDetalheMov(it, tr); };
+    tr.onclick = function (e) {
+      const ac = e.target.closest('[data-acao-linha]');
+      if (ac) { e.stopPropagation(); acaoLinhaMov(ac.dataset.acaoLinha, it, ac, tela); return; }
+      abrir();
+    };
+    tr.onkeydown = function (e) { if (e.key === 'Enter' && e.target === tr) abrir(); };
+    tr.onfocus = function () { S.focoMov = tr.dataset.mov; };
+  });
+}
+
+function ligarMovG(tela) {
+  fecharPicker();
+  ligarFiltrosMov(tela);
+  ligarTabelaMov(tela);
+  const busca = tela.querySelector('#busca');
+  if (busca) busca.oninput = function () { S.busca = busca.value; S.sel = new Set(); atualizarMov(tela); };
+}
+
+/* ------------------------------------------------------------- ações de linha */
+
+function acaoLinhaMov(acao, it, botao, tela) {
+  if (!it) return;
+  if (acao === 'editar') { abrirDetalheMov(it); return; }
+  if (acao === 'duplicar') {
+    const rasc = rascunhoVazio({
+      tipo: it.valor > 0 ? 'receita' : 'despesa', valor: Math.abs(it.valor), descricao: it.descricao.replace(/\s*\(\d+\/\d+\)\s*$/, ''),
+      data: hojeISO(), conta: it.conta, cartao: it.cartao, categoria: it.categoria, quem: it.quem || S.boot.quem || ''
+    });
+    abrirFolha(topoFolha('Duplicar lançamento') + '<div id="area-form"></div>', function (folha) {
+      montarForm(folha.querySelector('#area-form'), rasc, { novo: true });
+    });
+    return;
+  }
+  if (acao === 'excluir') {
+    if (botao.dataset.armado !== '1') {
+      botao.dataset.armado = '1'; botao.classList.add('armado'); botao.title = 'Clique de novo para excluir';
+      aviso('Clique de novo na lixeira para excluir “' + it.descricao + '”.');
+      setTimeout(function () { if (botao.isConnected) { botao.dataset.armado = ''; botao.classList.remove('armado'); botao.title = 'Excluir'; } }, 4000);
+      return;
+    }
+    botao.disabled = true;
+    run('appExcluirLote', [it.id]).then(function () { aviso('Excluído.'); invalidar(); }).catch(function (e) { botao.disabled = false; erro(e); });
+  }
+}
+
+/* ----------------------------------------------------- detalhe ao lado da lista */
+
+function abrirDetalheMov(it, tr) {
+  abrirEdicao(it);
+  if (!S.grande) return;
+  // A lista continua visível e rolando ao lado do painel
+  document.getElementById('folha-fundo').classList.add('leve');
+  document.body.classList.add('com-detalhe');
+  document.body.style.overflow = '';
+  document.querySelectorAll('tr[data-mov].ativo').forEach(x => x.classList.remove('ativo'));
+  const linha = tr || document.querySelector('tr[data-mov="' + CSS.escape(it.id) + '"]');
+  if (linha) linha.classList.add('ativo');
+  const folha = document.getElementById('folha');
+  const sec = document.createElement('section');
+  sec.className = 'mv-det';
+  sec.innerHTML = '<p class="g-suave g-pequeno">Carregando histórico…</p>';
+  folha.appendChild(sec);
+  run('appDetalheLancamento', it.id).then(function (d) {
+    if (!sec.isConnected) return;
+    let h = '';
+    if (d.serie && d.serie.length) {
+      const pagas = d.serie.filter(x => x.status === 'confirmado' || x.status === 'conciliado').length;
+      h += '<h3>' + (it.parcela ? 'Parcelas' : 'Esta conta fixa') + ' <span class="g-suave">' + pagas + ' de ' + d.serie.length + ' realizadas</span></h3><ol class="mv-det-lista">' +
+        d.serie.slice(0, 18).map(x => '<li class="' + (x.id === it.id ? 'atual' : '') + '"><span>' + esc(dataCurta(x.data)) + (x.parcela ? ' · ' + esc(x.parcela) : '') + '</span>' +
+          '<span class="g-suave">' + esc(STATUS_NOMES[x.status] || x.status) + '</span><b>' + sinal(x.valor) + '</b></li>').join('') +
+        (d.serie.length > 18 ? '<li class="g-suave">… e mais ' + (d.serie.length - 18) + '</li>' : '') + '</ol>';
+    }
+    if (d.historico && d.historico.length) {
+      h += '<h3>Outras vezes' + (d.media !== null ? ' <span class="g-suave">média ' + brl(d.media) + '</span>' : '') + '</h3><ol class="mv-det-lista">' +
+        d.historico.map(x => {
+          const k = x.cartao ? 'k:' + x.cartao : (x.conta ? 'c:' + x.conta : '');
+          return '<li><span>' + esc(dataCurta(x.data)) + '/' + esc(x.data.slice(2, 4)) + '</span><span class="g-suave">' + (k ? esc(nomeCurtoPag(infoPagamento(k).nome)) : '') + '</span><b>' + sinal(x.valor) + '</b></li>';
+        }).join('') + '</ol>';
+    }
+    sec.innerHTML = h;
+    if (!h) sec.remove();
+  }).catch(function () { if (sec.isConnected) sec.remove(); });
+}
+
+/* ------------------------------------------------------------------ atalhos */
+
+const ATALHOS_MOV = [
+  ['/', 'buscar'], ['N', 'novo lançamento'], ['J / K', 'descer / subir na lista'], ['Enter', 'abrir o lançamento'],
+  ['X', 'marcar ou desmarcar a linha'], ['[ / ]', 'mês anterior / próximo'], ['C', 'mostrar ou recolher o painel de contas'], ['Esc', 'fechar o painel ou limpar a seleção']
+];
+
+function mostrarAtalhos() {
+  abrirFolha(topoFolha('Atalhos do teclado') + '<table class="g-tabela mv-atalhos"><tbody>' +
+    ATALHOS_MOV.map(a => '<tr class="g-sem-clique"><td><kbd>' + esc(a[0]) + '</kbd></td><td>' + esc(a[1]) + '</td></tr>').join('') + '</tbody></table>' +
+    '<p class="obs">Funcionam na tela Lançamentos, fora dos campos de texto.</p>');
+}
+
+document.addEventListener('keydown', function (e) {
+  if (!S.grande || S.aba !== 'movimentos' || !S.lista) return;
+  const alvo = e.target;
+  const digitando = alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT' || alvo.isContentEditable);
+  const folhaAberta = !document.getElementById('folha').hidden;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tela = document.getElementById('tela');
+  if (e.key === 'Escape' && !folhaAberta && S.sel.size && !digitando) { S.sel = new Set(); redesenharTabela(tela); return; }
+  if (digitando) {
+    if (e.key === 'Escape' && alvo.id === 'busca') alvo.blur();
+    return;
+  }
+  if (folhaAberta && e.key !== 'j' && e.key !== 'k') return;
+  const linhas = Array.from(tela.querySelectorAll('tr[data-mov]'));
+  const idx = linhas.findIndex(tr => tr.dataset.mov === S.focoMov);
+  if (e.key === '/') { e.preventDefault(); const b = tela.querySelector('#busca'); if (b) b.focus(); }
+  else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); abrirLancar(''); }
+  else if (e.key === 'j' || e.key === 'k') {
+    e.preventDefault();
+    if (!linhas.length) return;
+    const novo = Math.max(0, Math.min(linhas.length - 1, idx === -1 ? 0 : idx + (e.key === 'j' ? 1 : -1)));
+    const tr = linhas[novo];
+    S.focoMov = tr.dataset.mov;
+    linhas.forEach(x => x.classList.toggle('foco', x === tr));
+    tr.focus({ preventScroll: true });
+    tr.scrollIntoView({ block: 'nearest' });
+    if (folhaAberta) { const it = S.lista.find(l => l.id === tr.dataset.mov); if (it) abrirDetalheMov(it, tr); }
+  }
+  else if ((e.key === 'x' || e.key === 'X') && idx !== -1) {
+    e.preventDefault();
+    const id = linhas[idx].dataset.mov;
+    if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id);
+    redesenharTabela(tela);
+    const tr = tela.querySelector('tr[data-mov="' + CSS.escape(id) + '"]'); if (tr) tr.focus({ preventScroll: true });
+  }
+  else if (e.key === '[' || e.key === ']') {
+    e.preventDefault();
+    S.listaMes = mudarMes(S.listaMes || mesAtual(), e.key === ']' ? 1 : -1); S.lista = null; S.sel = new Set();
+    desenhar(); carregarAba(true);
+  }
+  else if (e.key === 'c' || e.key === 'C') { e.preventDefault(); prefGravar('painel_contas_fechado', !painelRecolhido()); desenhar(); }
+});
+</script>
