@@ -390,5 +390,74 @@ function appMovimentos(ano, mes) {
     proj.pontos.forEach(p => { saldos[p.data] = p.saldo; });
     porConta = proj.porConta || {};
   } catch (e) { /* sem contas: sem coluna de saldo */ }
-  return { itens: itens, saldos: saldos, saldos_por_conta: porConta };
+  // Painel de contas: fatura de cada cartão no mês e o limite
+  let cartoes = [];
+  try {
+    const hoje = Utils.today();
+    const boot = {};
+    appCartoesAtivos_().forEach(c => { boot[String(c.id)] = c; });
+    // No mês corrente: a fatura aberta agora (onde caem as compras de hoje); nos outros, a que vence no mês
+    const ehAtual = hoje.slice(0, 7) === String(ano) + '-' + String(mes).padStart(2, '0');
+    const porComp = {};
+    const saldosDe = (a, m) => { const k = a + '-' + m; if (!porComp[k]) porComp[k] = getSaldosCartoes(a, m); return porComp[k]; };
+    cartoes = Object.keys(boot).map(id => {
+      const cfg = boot[id];
+      let a = Number(ano), m = Number(mes);
+      if (ehAtual) {
+        const comp = String(competenciaFaturaPorData_(cfg, hoje) || '');
+        if (/^\d{4}-\d{2}$/.test(comp)) { a = Number(comp.slice(0, 4)); m = Number(comp.slice(5, 7)); }
+      }
+      const c = saldosDe(a, m).find(x => String(x.id) === id);
+      if (!c) return null;
+      const venc = Number(cfg.dia_vencimento) || 0;
+      return {
+        id: String(c.id), nome: String(c.nome), icone_url: String(c.icone_url || ''),
+        fatura: appArred_(-(Number(c.fatura_mes) || 0)),
+        limite: Number(c.limite) || 0,
+        usado: appArred_(Math.max(0, -(Number(c.saldo_devedor) || 0))),
+        vencimento: venc ? (String(a) + '-' + String(m).padStart(2, '0') + '-' + String(Math.min(venc, new Date(a, m, 0).getDate())).padStart(2, '0')) : '',
+        aberta: ehAtual
+      };
+    }).filter(Boolean);
+  } catch (e) { cartoes = []; }
+
+  // Mês anterior, para comparar entradas e saídas (sem transferências)
+  const anterior = { entradas: 0, saidas: 0 };
+  try {
+    const pa = Number(mes) === 1 ? Number(ano) - 1 : Number(ano), pm = Number(mes) === 1 ? 12 : Number(mes) - 1;
+    const ra = Utils.monthRange(pa, pm);
+    DB.readAll(SHEET_LANCAMENTOS).forEach(l => {
+      if (l.data < ra.start || l.data > ra.end || l.transferencia_id) return;
+      const v = Number(l.valor) || 0;
+      if (v > 0) anterior.entradas += v; else anterior.saidas += -v;
+    });
+    anterior.entradas = appArred_(anterior.entradas); anterior.saidas = appArred_(anterior.saidas);
+  } catch (e) { /* sem comparação */ }
+
+  return { itens: itens, saldos: saldos, saldos_por_conta: porConta, cartoes: cartoes, anterior: anterior };
+}
+
+/**
+ * Detalhe de um lançamento para o painel ao lado: as outras parcelas da série e
+ * as outras vezes em que a mesma descrição apareceu (com a média).
+ */
+function appDetalheLancamento(id) {
+  const todos = DB.readAll(SHEET_LANCAMENTOS);
+  const l = todos.find(x => String(x.id) === String(id));
+  if (!l) return { serie: [], historico: [], media: null };
+  const serie = l.recorrencia_id
+    ? todos.filter(x => String(x.recorrencia_id) === String(l.recorrencia_id))
+      .sort((a, b) => String(a.data).localeCompare(String(b.data)))
+      .map(x => ({ id: String(x.id), data: String(x.data).slice(0, 10), valor: Number(x.valor) || 0, status: String(x.status || ''), parcela: x.parcela_atual ? x.parcela_atual + '/' + x.parcela_total : '' }))
+    : [];
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*\(\d+\/\d+\)\s*$/, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const alvo = norm(l.descricao);
+  const serieIds = {};
+  serie.forEach(x => { serieIds[x.id] = true; });
+  const historico = alvo.length < 3 ? [] : todos.filter(x => String(x.id) !== String(id) && !serieIds[String(x.id)] && norm(x.descricao) === alvo && !x.transferencia_id)
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)))
+    .slice(0, 8)
+    .map(x => ({ id: String(x.id), data: String(x.data).slice(0, 10), valor: Number(x.valor) || 0, conta: String(x.conta || ''), cartao: String(x.cartao || '') }));
+  const media = historico.length >= 2 ? appArred_(historico.reduce((t, x) => t + x.valor, 0) / historico.length) : null;
+  return { serie: serie.length > 1 ? serie : [], historico: historico, media: media };
 }
