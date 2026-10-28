@@ -26,7 +26,7 @@ const TIPOS_MOV = [
   { id: 'entradas', nome: 'Entradas', f: l => l.valor > 0 && !l.transferencia },
   { id: 'transf', nome: 'Transf.', f: l => l.transferencia }
 ];
-const NOMES_BANCO = { IT: 'Itaú', ITI: 'Iti', BB: 'Banco do Brasil', CX: 'Caixa', XP: 'XP', NU: 'Nubank', PX: 'Pluxee', BT: 'BTG', CL: 'C6' };
+const NOMES_BANCO = { IT: 'Itaú', ITI: 'Iti', BB: 'BB', CX: 'Caixa', XP: 'XP', NU: 'Nubank', PX: 'Pluxee', BT: 'BTG', CL: 'C6' };
 const CORES_CAT = ['#0B6B58', '#2E7FB8', '#B4531F', '#7A4FB5', '#C28A00', '#C2416B', '#3F7D20', '#5A6472', '#0F8FA3', '#9A5B13'];
 
 function realizado_(l) { return l.status === 'confirmado' || l.status === 'conciliado' || l.status === 'revisar'; }
@@ -189,18 +189,22 @@ function painelContasG() {
 
   let h = '<div class="mv-painel-topo"><b>Contas e cartões</b><button type="button" class="icone-btn sem-borda" data-acao="painel-contas" title="Recolher" aria-label="Recolher o painel">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button></div>';
+  // Valores lado a lado: hoje e fim do mês (no mês corrente); nos outros, só o fim do mês
+  const vals = (hojeV, fimV) => atual
+    ? '<span class="mv-vals"><b class="' + (hojeV < 0 ? 'g-alerta' : '') + '">' + numBR(hojeV) + '</b><b class="mv-vals-fim' + (fimV < 0 ? ' g-alerta' : '') + '">' + numBR(fimV) + '</b></span>'
+    : '<b class="mv-conta-val' + (fimV < 0 ? ' g-alerta' : '') + '">' + numBR(fimV) + '</b>';
+  const colunas = atual ? '<span class="mv-cols"><span>hoje</span><span>fim do mês</span></span>' : '<span>' + (passado ? 'fim do mês' : 'previsto') + '</span>';
+  h += '<div class="mv-grupo mv-grupo-topo">' + colunas + '</div>';
   h += '<button type="button" class="mv-conta mv-todas' + (!sel.length ? ' ativo' : '') + '" data-conta-k="">' +
-    '<span class="mv-conta-txt"><span class="mv-conta-nome">Todas as contas</span><span class="mv-conta-sub">' + (atual ? '→ ' + numBR(totFim) : (passado ? 'saldo no fim do mês' : 'previsto no fim do mês')) + '</span></span>' +
-    '<b class="mv-conta-val' + ((atual ? totHoje : totFim) < 0 ? ' g-alerta' : '') + '">' + numBR(atual ? totHoje : totFim) + '</b></button>';
+    '<span class="mv-conta-txt"><span class="mv-conta-nome">Todas</span></span>' + vals(totHoje, totFim) + '</button>';
 
-  h += '<div class="mv-grupo">Contas' + (atual ? '<span>hoje → fim do mês</span>' : '') + '</div>';
+  h += '<div class="mv-grupo">Contas</div>';
   h += contas.map(x => {
     const info = infoPagamento(x.k);
-    const val = atual ? x.agora : x.fim;
     const alerta = x.menor && x.menor.v < 0;
-    const sub = atual ? (alerta ? '<span class="g-alerta">⚠ negativo em ' + dataCurta(x.menor.d) + '</span>' : '<span title="Saldo previsto no fim do mês">→ ' + numBR(x.fim) + '</span>') : '';
+    const sub = alerta ? '<span class="g-alerta">⚠ negativo em ' + dataCurta(x.menor.d) + '</span>' : '';
     const extra = x.rev ? '<i class="mv-ponto" title="' + x.rev + ' a revisar"></i>' : '';
-    return item(x.k, info, nomeCurtoPag(x.c.nome), '<b class="mv-conta-val' + (val < 0 ? ' g-alerta' : '') + '">' + numBR(val) + '</b>', sub, extra);
+    return item(x.k, info, nomeCurtoPag(x.c.nome), vals(x.agora, x.fim), sub, extra);
   }).join('');
 
   const cartoes = S.cartoesMov || [];
